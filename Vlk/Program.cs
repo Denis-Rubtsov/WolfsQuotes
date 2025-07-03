@@ -49,7 +49,7 @@ botClient.StartReceiving(
                 new InlineQueryResultArticle(
                     id: "1",
                     title: "Вспомнить мудрость",
-                    inputMessageContent: new InputTextMessageContent(GetRandomQuote())
+                    inputMessageContent: new InputTextMessageContent($"{GetRandomQuote()}\n\nМудростью поделился Великий Вълкъ - @Vlk_quote_bot")
                 )
                 {
                     Description = "Вы вспоминаете мудрость Великого вълка"
