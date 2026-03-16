@@ -1,10 +1,10 @@
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InlineQueryResults;
 using Telegram.Bot.Types.ReplyMarkups;
-using Microsoft.Extensions.Configuration;
 using File = System.IO.File;
 
 class BotData
@@ -30,13 +30,9 @@ class DataService
         _file = file;
 
         if (File.Exists(file))
-        {
             Data = JsonSerializer.Deserialize<BotData>(File.ReadAllText(file))!;
-        }
         else
-        {
             Data = new BotData();
-        }
     }
 
     public void Save()
@@ -86,21 +82,28 @@ class InlineHandler
 
     public async Task Handle(ITelegramBotClient bot, InlineQuery query)
     {
+        var input = query.Query.Trim();
+        var quoteCount = _data.Data.quotes.Count;
+
         string quote;
         string title = "Вспомнить мудрость";
         int number;
 
-        if (int.TryParse(query.Query, out int index))
+        if (int.TryParse(input, out int index))
         {
             index -= 1;
 
-            if (index < 0 || index >= _data.Data.quotes.Count)
+            if (index < 0 || index >= quoteCount)
             {
                 await bot.AnswerInlineQueryAsync(
                     query.Id,
-                    Array.Empty<InlineQueryResult>(),
+                    Array.Empty<IInlineQueryResult>(),
                     cacheTime: 0,
-                    isPersonal: true
+                    isPersonal: true,
+                    button: new InlineQueryResultsButton(
+                        $"Введите номер цитаты (от 1 до {quoteCount})",
+                        "start"
+                    )
                 );
                 return;
             }
@@ -117,29 +120,30 @@ class InlineHandler
 
         var voice = _voiceUrl + $"{number}.ogg";
 
-        var results = new InlineQueryResult[]
+        var results = new IInlineQueryResult[]
         {
             new InlineQueryResultArticle(
                 Guid.NewGuid().ToString(),
                 title,
-                new InputTextMessageContent(quote)
-            )
+                new InputTextMessageContent(quote))
             {
                 Description = quote[..Math.Min(80, quote.Length)]
             },
-
             new InlineQueryResultVoice(
-                Guid.NewGuid().ToString(), 
+                Guid.NewGuid().ToString(),
                 voice,
-                title + " голосом Волка"
-            )
+                title + " голосом Волка")
         };
 
         await bot.AnswerInlineQueryAsync(
             query.Id,
             results,
             cacheTime: 0,
-            isPersonal: true
+            isPersonal: true,
+            button: new InlineQueryResultsButton(
+                $"Введите номер цитаты (от 1 до {quoteCount})",
+                "start"
+            )
         );
     }
 }
@@ -152,8 +156,7 @@ class BotService
     private readonly QuoteService _quotes;
     private readonly long _adminId;
 
-    private readonly Dictionary<long, string> _userMode = new();
-    private readonly Dictionary<long, string> _pendingQuote = new();
+    private readonly Dictionary<long, Dictionary<string, string>> _userState = new();
 
     public BotService(
         ITelegramBotClient bot,
@@ -183,57 +186,89 @@ class BotService
         }
 
         if (update.Message?.Text != null)
-        {
             await HandleMessage(update);
-        }
 
         if (update.CallbackQuery != null)
-        {
             await HandleCallback(update);
-        }
     }
 
     private async Task HandleMessage(Update update)
     {
         var text = update.Message!.Text!;
         var user = update.Message.From!;
+        var chatId = update.Message.Chat.Id;
+
+        if (text.StartsWith("/start"))
+        {
+            await _bot.SendTextMessageAsync(chatId,
+                "Добро пожаловать в бот \"Вълчьи цитаты\".\n\n/suggest — предложить цитату\n/list — список цитат");
+            return;
+        }
+
+        if (text.StartsWith("/help"))
+        {
+            await _bot.SendTextMessageAsync(chatId,
+                "/suggest\n/list\n/addquote\n/listsuggest\n/approve\n/reject");
+            return;
+        }
+
+        if (text.StartsWith("/list") && !text.StartsWith("/listsuggest"))
+        {
+            var list = string.Join("\n",
+                _data.Data.quotes.Select((q, i) => $"{i + 1}. {q}"));
+            await _bot.SendTextMessageAsync(chatId, list);
+            return;
+        }
 
         if (text.StartsWith("/suggest"))
         {
-            _userMode[user.Id] = "suggest";
-            await _bot.SendTextMessageAsync(update.Message.Chat.Id, "✍️ Введите цитату.");
+            SetMode(user.Id, "suggest");
+            await _bot.SendTextMessageAsync(chatId, "✍️ Введите цитату для предложения.");
             return;
         }
 
-        if (text.StartsWith("/list"))
+        if (text.StartsWith("/addquote") && user.Id == _adminId)
         {
-            var all = string.Join("\n",
-                _data.Data.quotes.Select((q, i) => $"{i + 1}. {q}"));
-
-            await _bot.SendTextMessageAsync(update.Message.Chat.Id, all);
+            SetMode(user.Id, "add");
+            await _bot.SendTextMessageAsync(chatId, "Введите цитату для добавления.");
             return;
         }
 
-        if (_userMode.ContainsKey(user.Id))
+        if (text.StartsWith("/listsuggest") && user.Id == _adminId)
         {
-            _pendingQuote[user.Id] = text;
+            if (!_data.Data.suggestions.Any())
+            {
+                await _bot.SendTextMessageAsync(chatId, "Нет предложенных цитат");
+                return;
+            }
 
-            var keyboard = new InlineKeyboardMarkup(
+            var textOut = string.Join("\n",
+                _data.Data.suggestions.Select((s, i) =>
+                    $"{i + 1}. {s.quote} (от {s.user_id})"));
+
+            await _bot.SendTextMessageAsync(chatId, textOut);
+            return;
+        }
+
+        if (!_userState.ContainsKey(user.Id))
+            return;
+
+        _userState[user.Id]["pending_quote"] = text;
+
+        var keyboard = new InlineKeyboardMarkup(
+            new[]
+            {
                 new[]
                 {
-                    new[]
-                    {
-                        InlineKeyboardButton.WithCallbackData("✅ Подтвердить","confirm"),
-                        InlineKeyboardButton.WithCallbackData("❌ Отмена","cancel")
-                    }
-                });
+                    InlineKeyboardButton.WithCallbackData("✅ Подтвердить","confirm"),
+                    InlineKeyboardButton.WithCallbackData("❌ Отменить","cancel")
+                }
+            });
 
-            await _bot.SendTextMessageAsync(
-                update.Message.Chat.Id,
-                $"Вы ввели:\n\n{text}",
-                replyMarkup: keyboard
-            );
-        }
+        await _bot.SendTextMessageAsync(
+            chatId,
+            $"Вот что вы ввели:\n\n{text}\n\nПодтвердить?",
+            replyMarkup: keyboard);
     }
 
     private async Task HandleCallback(Update update)
@@ -241,17 +276,26 @@ class BotService
         var query = update.CallbackQuery!;
         var user = query.From;
 
-        if (!_pendingQuote.ContainsKey(user.Id))
+        if (!_userState.ContainsKey(user.Id))
         {
-            await _bot.AnswerCallbackQueryAsync(query.Id, "Данные устарели");
+            await _bot.AnswerCallbackQueryAsync(query.Id);
             return;
         }
 
-        var quote = _pendingQuote[user.Id];
+        var state = _userState[user.Id];
+
+        if (!state.ContainsKey("pending_quote"))
+        {
+            await _bot.AnswerCallbackQueryAsync(query.Id);
+            return;
+        }
+
+        var quote = state["pending_quote"];
+        var mode = state["mode"];
 
         if (query.Data == "confirm")
         {
-            if (_userMode[user.Id] == "suggest")
+            if (mode == "suggest")
             {
                 _data.Data.suggestions.Add(new Suggestion
                 {
@@ -265,7 +309,27 @@ class BotService
                 await _bot.EditMessageTextAsync(
                     query.Message!.Chat.Id,
                     query.Message.MessageId,
-                    "Цитата отправлена на рассмотрение");
+                    "Цитата отправлена на рассмотрение.");
+            }
+
+            if (mode == "add" && user.Id == _adminId)
+            {
+                if (!_quotes.Exists(quote))
+                {
+                    _data.Data.quotes.Add(quote);
+                    _data.Save();
+                    await _bot.EditMessageTextAsync(
+                        query.Message!.Chat.Id,
+                        query.Message.MessageId,
+                        "🔥 Цитата добавлена.");
+                }
+                else
+                {
+                    await _bot.EditMessageTextAsync(
+                        query.Message!.Chat.Id,
+                        query.Message.MessageId,
+                        "⚠️ Такая цитата уже существует.");
+                }
             }
         }
 
@@ -274,11 +338,18 @@ class BotService
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                "Отменено");
+                "❌ Действие отменено.");
         }
 
-        _pendingQuote.Remove(user.Id);
-        _userMode.Remove(user.Id);
+        _userState.Remove(user.Id);
+    }
+
+    private void SetMode(long userId, string mode)
+    {
+        _userState[userId] = new Dictionary<string, string>
+        {
+            ["mode"] = mode
+        };
     }
 
     private Task Error(ITelegramBotClient bot, Exception ex, CancellationToken ct)
