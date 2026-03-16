@@ -303,7 +303,7 @@ class Program
 
         var bot = new TelegramBotClient(token);
 
-        var data = new DataService("quotes.json");
+        var data = new DataService("/data/quotes.json");
         var quotes = new QuoteService(data);
         var inline = new InlineHandler(quotes, data, voice);
 
