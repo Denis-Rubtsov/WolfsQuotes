@@ -97,13 +97,10 @@ class InlineHandler
             {
                 await bot.AnswerInlineQueryAsync(
                     query.Id,
-                    Array.Empty<IInlineQueryResult>(),
+                    Array.Empty<InlineQueryResult>(),
                     cacheTime: 0,
                     isPersonal: true,
-                    button: new InlineQueryResultsButton(
-                        $"Введите номер цитаты (от 1 до {quoteCount})",
-                        "start"
-                    )
+                    switchPmText: $"Для получения конкретной цитаты введите целое число от 1 до {_data.Data.quotes.Count}"
                 );
                 return;
             }
@@ -120,7 +117,7 @@ class InlineHandler
 
         var voice = _voiceUrl + $"{number}.ogg";
 
-        var results = new IInlineQueryResult[]
+        var results = new InlineQueryResult[]
         {
             new InlineQueryResultArticle(
                 Guid.NewGuid().ToString(),
@@ -140,10 +137,7 @@ class InlineHandler
             results,
             cacheTime: 0,
             isPersonal: true,
-            button: new InlineQueryResultsButton(
-                $"Введите номер цитаты (от 1 до {quoteCount})",
-                "start"
-            )
+            switchPmText: $"Для получения конкретной цитаты введите целое число от 1 до {_data.Data.quotes.Count}"
         );
     }
 }
