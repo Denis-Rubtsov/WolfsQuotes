@@ -363,6 +363,7 @@ class Program
     {
         var config = new ConfigurationBuilder()
             .AddJsonFile("appsettings.json", true)
+            .AddJsonFile("appsettings.Local.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
 
