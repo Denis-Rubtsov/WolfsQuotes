@@ -381,6 +381,6 @@ class Program
         service.Start();
 
         Console.WriteLine("Бот запущен");
-        Console.ReadLine();
+        Thread.Sleep(Timeout.Infinite);
     }
 }
