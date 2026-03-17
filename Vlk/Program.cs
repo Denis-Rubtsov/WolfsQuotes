@@ -100,8 +100,9 @@ class InlineHandler
                     Array.Empty<InlineQueryResult>(),
                     cacheTime: 0,
                     isPersonal: true,
+                    null,
                     switchPmText: $"Для получения конкретной цитаты введите целое число от 1 до {_data.Data.quotes.Count}",
-                    switchPmParameter: "start"
+                    "start"
                 );
                 return;
             }
@@ -138,7 +139,9 @@ class InlineHandler
             results,
             cacheTime: 0,
             isPersonal: true,
-            switchPmText: $"Для получения конкретной цитаты введите целое число от 1 до {_data.Data.quotes.Count}"
+            null,
+            switchPmText: $"Для получения конкретной цитаты введите целое число от 1 до {_data.Data.quotes.Count}",
+            "start"
         );
     }
 }
