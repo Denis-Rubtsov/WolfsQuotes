@@ -140,7 +140,7 @@ class InlineHandler
             cacheTime: 0,
             isPersonal: true,
             null,
-            switchPmText: $"Для получения конкретной цитаты введите целое число от 1 до {_data.Data.quotes.Count}",
+            switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
             "start"
         );
     }
