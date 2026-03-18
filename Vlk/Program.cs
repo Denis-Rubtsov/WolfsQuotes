@@ -82,67 +82,78 @@ class InlineHandler
 
     public async Task Handle(ITelegramBotClient bot, InlineQuery query)
     {
-        var input = query.Query.Trim();
-        var quoteCount = _data.Data.quotes.Count;
-
-        string quote;
-        string title = "Вспомнить мудрость";
-        int number;
-
-        if (int.TryParse(input, out int index))
+        try
         {
-            index -= 1;
+            var input = query.Query.Trim();
+            var quoteCount = _data.Data.quotes.Count;
 
-            if (index < 0 || index >= quoteCount)
+            string quote;
+            string title = "Вспомнить мудрость";
+            int number;
+
+            if (int.TryParse(input, out int index))
             {
-                await bot.AnswerInlineQueryAsync(
-                    query.Id,
-                    Array.Empty<InlineQueryResult>(),
-                    cacheTime: 0,
-                    isPersonal: true,
-                    null,
-                    switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
-                    "start"
-                );
-                return;
+                index -= 1;
+
+                if (index < 0 || index >= quoteCount)
+                {
+                    await bot.AnswerInlineQueryAsync(
+                        query.Id,
+                        Array.Empty<InlineQueryResult>(),
+                        cacheTime: 0,
+                        isPersonal: true,
+                        null,
+                        switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
+                        "start"
+                    );
+                    return;
+                }
+
+                quote = _data.Data.quotes[index];
+                number = index + 1;
+                title = $"Мудрость №{number}";
+            }
+            else
+            {
+                quote = _quotes.GetRandom();
+                number = _data.Data.quotes.IndexOf(quote) + 1;
             }
 
-            quote = _data.Data.quotes[index];
-            number = index + 1;
-            title = $"Мудрость №{number}";
-        }
-        else
-        {
-            quote = _quotes.GetRandom();
-            number = _data.Data.quotes.IndexOf(quote) + 1;
-        }
+            var voice = _voiceUrl + $"{number}.ogg";
 
-        var voice = _voiceUrl + $"{number}.ogg";
-
-        var results = new InlineQueryResult[]
-        {
-            new InlineQueryResultArticle(
-                Guid.NewGuid().ToString(),
-                title,
-                new InputTextMessageContent(quote))
+            var results = new InlineQueryResult[]
             {
-                Description = quote[..Math.Min(80, quote.Length)]
-            },
-            new InlineQueryResultVoice(
-                Guid.NewGuid().ToString(),
-                voice,
-                title + " голосом Волка")
-        };
+                new InlineQueryResultArticle(
+                    Guid.NewGuid().ToString(),
+                    title,
+                    new InputTextMessageContent(quote))
+                {
+                    Description = quote[..Math.Min(80, quote.Length)]
+                },
+                new InlineQueryResultVoice(
+                    Guid.NewGuid().ToString(),
+                    voice,
+                    title + " голосом Волка")
+            };
 
-        await bot.AnswerInlineQueryAsync(
-            query.Id,
-            results,
-            cacheTime: 0,
-            isPersonal: true,
-            null,
-            switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
-            "start"
-        );
+            await bot.AnswerInlineQueryAsync(
+                query.Id,
+                results,
+                cacheTime: 0,
+                isPersonal: true,
+                null,
+                switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
+                "start"
+            );
+        }
+        catch (Telegram.Bot.Exceptions.ApiRequestException ex)
+            when (ex.Message.Contains("query is too old"))
+        {
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
     }
 }
 
