@@ -90,23 +90,15 @@ class InlineHandler
             string quote;
             string title = "Вспомнить мудрость";
             int number;
-
+            InlineQueryResult[] results = null;
+            
             if (int.TryParse(input, out int index))
             {
                 index -= 1;
 
                 if (index < 0 || index >= quoteCount)
                 {
-                    await bot.AnswerInlineQueryAsync(
-                        query.Id,
-                        Array.Empty<InlineQueryResult>(),
-                        cacheTime: 0,
-                        isPersonal: true,
-                        null,
-                        switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
-                        "start"
-                    );
-                    return;
+                    goto Answer;
                 }
 
                 quote = _data.Data.quotes[index];
@@ -121,7 +113,7 @@ class InlineHandler
 
             var voice = _voiceUrl + $"{number}.ogg";
 
-            var results = new InlineQueryResult[]
+            results = new InlineQueryResult[]
             {
                 new InlineQueryResultArticle(
                     Guid.NewGuid().ToString(),
@@ -135,7 +127,8 @@ class InlineHandler
                     voice,
                     title + " голосом Волка")
             };
-
+            
+            Answer:
             await bot.AnswerInlineQueryAsync(
                 query.Id,
                 results,
@@ -377,13 +370,14 @@ class Program
             .AddEnvironmentVariables()
             .Build();
 
+        var quotesFile = config["QuotesFile"];
         var token = config["TelegramBot:Token"];
         var admin = long.Parse(config["ADMIN_ID"] ?? "0");
         var voice = config["BASIC_URL"] ?? "";
 
         var bot = new TelegramBotClient(token);
 
-        var data = new DataService("/data/quotes.json");
+        var data = new DataService(quotesFile);
         var quotes = new QuoteService(data);
         var inline = new InlineHandler(quotes, data, voice);
 
