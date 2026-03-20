@@ -57,6 +57,9 @@ class QuoteService
 
     public string GetRandom()
     {
+        if (_data.Data.quotes.Count == 0)
+            return "Нет доступных цитат";
+
         return _data.Data.quotes[_random.Next(_data.Data.quotes.Count)];
     }
 
@@ -295,6 +298,51 @@ class BotService
         var quote = state["pending_quote"];
         var mode = state["mode"];
 
+        if (query.Data != null && query.Data.StartsWith("approve_") && user.Id == _adminId)
+        {
+            var index = int.Parse(query.Data.Split('_')[1]);
+
+            if (index >= 0 && index < _data.Data.suggestions.Count)
+            {
+                var suggestion = _data.Data.suggestions[index];
+
+                if (!_quotes.Exists(suggestion.quote))
+                {
+                    _data.Data.quotes.Add(suggestion.quote);
+                }
+
+                _data.Data.suggestions.RemoveAt(index);
+                _data.Save();
+
+                await _bot.EditMessageTextAsync(
+                    query.Message!.Chat.Id,
+                    query.Message.MessageId,
+                    "✅ Цитата одобрена и добавлена."
+                );
+            }
+
+            return;
+        }
+
+        if (query.Data != null && query.Data.StartsWith("reject_") && user.Id == _adminId)
+        {
+            var index = int.Parse(query.Data.Split('_')[1]);
+
+            if (index >= 0 && index < _data.Data.suggestions.Count)
+            {
+                _data.Data.suggestions.RemoveAt(index);
+                _data.Save();
+
+                await _bot.EditMessageTextAsync(
+                    query.Message!.Chat.Id,
+                    query.Message.MessageId,
+                    "❌ Цитата отклонена."
+                );
+            }
+
+            return;
+        }
+
         if (query.Data == "confirm")
         {
             if (mode == "suggest")
@@ -308,10 +356,19 @@ class BotService
 
                 _data.Save();
 
-                await _bot.EditMessageTextAsync(
-                    query.Message!.Chat.Id,
-                    query.Message.MessageId,
-                    "Цитата отправлена на рассмотрение.");
+                // уведомление админу
+                await _bot.SendTextMessageAsync(
+                    _adminId,
+                    $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
+                    replyMarkup: new InlineKeyboardMarkup(new[]
+                    {
+                        new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{_data.Data.suggestions.Count - 1}"),
+                            InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{_data.Data.suggestions.Count - 1}")
+                        }
+                    })
+                );
             }
 
             if (mode == "add" && user.Id == _adminId)
