@@ -121,10 +121,10 @@ class InlineHandler
                 index = _quotes.GetRandom();
                 number = index + 1;
                 quote = _data.Data.quotes[index];
-                if (number == 31) number = 0;
             }
 
-            var voice = _voiceUrl + $"{number}.ogg?revision={DateTime.UtcNow.Ticks}";
+            if (number == 31) number = 0;
+            var voice = _voiceUrl + $"{number}.ogg";
             Console.WriteLine(voice);
 
             var results = new InlineQueryResult[]
