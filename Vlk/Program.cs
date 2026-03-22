@@ -55,12 +55,12 @@ class QuoteService
         _data = data;
     }
 
-    public string GetRandom()
+    public int GetRandom()
     {
         if (_data.Data.quotes.Count == 0)
-            return "Нет доступных цитат";
+            return 0;
 
-        return _data.Data.quotes[_random.Next(_data.Data.quotes.Count)];
+        return _random.Next(_data.Data.quotes.Count);
     }
 
     public bool Exists(string quote)
@@ -103,7 +103,7 @@ class InlineHandler
                     await bot.AnswerInlineQueryAsync(
                         query.Id,
                         Array.Empty<InlineQueryResult>(),
-                        cacheTime: 0,
+                        cacheTime: 11,
                         isPersonal: true,
                         null,
                         switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
@@ -118,8 +118,9 @@ class InlineHandler
             }
             else
             {
-                quote = _quotes.GetRandom();
-                number = _data.Data.quotes.IndexOf(quote) + 1;
+                index = _quotes.GetRandom();
+                number = index + 1;
+                quote = _data.Data.quotes[index];
             }
 
             var voice = _voiceUrl + $"{number}.ogg";
@@ -143,7 +144,7 @@ class InlineHandler
             await bot.AnswerInlineQueryAsync(
                 query.Id,
                 results,
-                cacheTime: 0,
+                cacheTime: 11,
                 isPersonal: true,
                 null,
                 switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
