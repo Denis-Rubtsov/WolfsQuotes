@@ -255,6 +255,68 @@ class BotService
             return;
         }
 
+        if (text.StartsWith("/reject") && user.Id == _adminId)
+        {
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int index))
+            {
+                await _bot.SendTextMessageAsync(chatId, "Использование: /reject <номер>");
+                return;
+            }
+
+            index -= 1;
+
+            if (index < 0 || index >= _data.Data.suggestions.Count)
+            {
+                await _bot.SendTextMessageAsync(chatId, "Неверный номер предложения");
+                return;
+            }
+
+            var removed = _data.Data.suggestions[index];
+            _data.Data.suggestions.RemoveAt(index);
+            _data.Save();
+
+            await _bot.SendTextMessageAsync(chatId,
+                $"❌ Отклонено: {removed.quote}");
+
+            return;
+        }
+
+        if (text.StartsWith("/approve") && user.Id == _adminId)
+        {
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int index))
+            {
+                await _bot.SendTextMessageAsync(chatId, "Использование: /approve <номер>");
+                return;
+            }
+
+            index -= 1;
+
+            if (index < 0 || index >= _data.Data.suggestions.Count)
+            {
+                await _bot.SendTextMessageAsync(chatId, "Неверный номер предложения");
+                return;
+            }
+
+            var suggestion = _data.Data.suggestions[index];
+
+            if (!_quotes.Exists(suggestion.quote))
+            {
+                _data.Data.quotes.Add(suggestion.quote);
+            }
+
+            _data.Data.suggestions.RemoveAt(index);
+            _data.Save();
+
+            await _bot.SendTextMessageAsync(chatId,
+                $"✅ Добавлено: {suggestion.quote}");
+
+            return;
+        }
+
         if (!_userState.ContainsKey(user.Id))
             return;
 
@@ -281,7 +343,6 @@ class BotService
         var query = update.CallbackQuery!;
         var user = query.From;
 
-        // --- ADMIN ACTIONS FIRST ---
         if (query.Data != null && query.Data.StartsWith("approve_") && user.Id == _adminId)
         {
             var index = int.Parse(query.Data.Split('_')[1]);
@@ -357,7 +418,6 @@ class BotService
 
                 _data.Save();
 
-                // уведомление админу
                 await _bot.SendTextMessageAsync(
                     _adminId,
                     $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
