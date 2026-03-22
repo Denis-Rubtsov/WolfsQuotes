@@ -281,23 +281,7 @@ class BotService
         var query = update.CallbackQuery!;
         var user = query.From;
 
-        if (!_userState.ContainsKey(user.Id))
-        {
-            await _bot.AnswerCallbackQueryAsync(query.Id);
-            return;
-        }
-
-        var state = _userState[user.Id];
-
-        if (!state.ContainsKey("pending_quote"))
-        {
-            await _bot.AnswerCallbackQueryAsync(query.Id);
-            return;
-        }
-
-        var quote = state["pending_quote"];
-        var mode = state["mode"];
-
+        // --- ADMIN ACTIONS FIRST ---
         if (query.Data != null && query.Data.StartsWith("approve_") && user.Id == _adminId)
         {
             var index = int.Parse(query.Data.Split('_')[1]);
@@ -342,6 +326,23 @@ class BotService
 
             return;
         }
+
+        if (!_userState.ContainsKey(user.Id))
+        {
+            await _bot.AnswerCallbackQueryAsync(query.Id);
+            return;
+        }
+
+        var state = _userState[user.Id];
+
+        if (!state.ContainsKey("pending_quote"))
+        {
+            await _bot.AnswerCallbackQueryAsync(query.Id);
+            return;
+        }
+
+        var quote = state["pending_quote"];
+        var mode = state["mode"];
 
         if (query.Data == "confirm")
         {
