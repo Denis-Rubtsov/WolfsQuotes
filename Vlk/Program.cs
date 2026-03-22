@@ -93,7 +93,7 @@ class InlineHandler
             string quote;
             string title = "Вспомнить мудрость";
             int number;
-            InlineQueryResult[] results = null;
+            InlineQueryResult[] results = new InlineQueryResult[2];
             
             if (int.TryParse(input, out int index))
             {
