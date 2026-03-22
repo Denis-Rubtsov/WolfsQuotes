@@ -123,7 +123,6 @@ class InlineHandler
                 quote = _data.Data.quotes[index];
             }
 
-            if (number == 31) number = 0;
             var voice = _voiceUrl + $"{number}.ogg";
             Console.WriteLine(voice);
 
