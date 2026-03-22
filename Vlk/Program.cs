@@ -93,7 +93,6 @@ class InlineHandler
             string quote;
             string title = "Вспомнить мудрость";
             int number;
-            InlineQueryResult[] results = new InlineQueryResult[2];
             
             if (int.TryParse(input, out int index))
             {
@@ -101,7 +100,16 @@ class InlineHandler
 
                 if (index < 0 || index >= quoteCount)
                 {
-                    goto Answer;
+                    await bot.AnswerInlineQueryAsync(
+                        query.Id,
+                        Array.Empty<InlineQueryResult>(),
+                        cacheTime: 0,
+                        isPersonal: true,
+                        null,
+                        switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
+                        "start"
+                    );
+                    return;
                 }
 
                 quote = _data.Data.quotes[index];
@@ -116,7 +124,7 @@ class InlineHandler
 
             var voice = _voiceUrl + $"{number}.ogg";
 
-            results = new InlineQueryResult[]
+            var results = new InlineQueryResult[]
             {
                 new InlineQueryResultArticle(
                     Guid.NewGuid().ToString(),
