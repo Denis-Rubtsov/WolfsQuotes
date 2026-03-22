@@ -123,6 +123,7 @@ class InlineHandler
             }
 
             var voice = _voiceUrl + $"{number}.ogg";
+            Console.WriteLine(voice);
 
             var results = new InlineQueryResult[]
             {
@@ -139,7 +140,6 @@ class InlineHandler
                     title + " голосом Волка")
             };
             
-            Answer:
             await bot.AnswerInlineQueryAsync(
                 query.Id,
                 results,
@@ -257,7 +257,7 @@ class BotService
 
             var textOut = string.Join("\n",
                 _data.Data.suggestions.Select((s, i) =>
-                    $"{i + 1}. {s.quote} (от {s.user_id})"));
+                    $"{i + 1}. {s.quote} (от {s.name})"));
 
             await _bot.SendTextMessageAsync(chatId, textOut);
             return;
