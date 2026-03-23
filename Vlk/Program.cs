@@ -123,8 +123,7 @@ class InlineHandler
                 quote = _data.Data.quotes[index];
             }
 
-            var voice = _voiceUrl + $"{number}.ogg?v={DateTime.UtcNow.Ticks}";
-            Console.WriteLine(voice);
+            var voice = _voiceUrl + $"{number}.ogg?v={number}";
 
             var results = new InlineQueryResult[]
             {
