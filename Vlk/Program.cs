@@ -129,7 +129,7 @@ class InlineHandler
             var results = new InlineQueryResult[]
             {
                 new InlineQueryResultArticle(
-                    Guid.NewGuid().ToString(),
+                    Guid.NewGuid().ToString() + DateTime.UtcNow.Ticks,
                     title,
                     new InputTextMessageContent(quote))
                 {
