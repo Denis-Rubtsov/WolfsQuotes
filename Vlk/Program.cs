@@ -92,7 +92,6 @@ class InlineHandler
 
             string quote;
             string title = "Вспомнить мудрость";
-            int number;
             
             if (int.TryParse(input, out int index))
             {
@@ -113,17 +112,15 @@ class InlineHandler
                 }
 
                 quote = _data.Data.quotes[index];
-                number = index + 1;
-                title = $"Мудрость №{number}";
+                title = $"Мудрость №{index + 1}";
             }
             else
             {
                 index = _quotes.GetRandom();
-                number = index + 1;
                 quote = _data.Data.quotes[index];
             }
 
-            var voice = _voiceUrl + $"{number}.ogg?v=1";
+            var voice = _voiceUrl + $"{index}.ogg?v=1";
 
             var results = new InlineQueryResult[]
             {
