@@ -123,7 +123,7 @@ class InlineHandler
                 quote = _data.Data.quotes[index];
             }
 
-            var voice = _voiceUrl + $"{number}.ogg";
+            var voice = _voiceUrl + $"{number}.ogg?v=1";
 
             var results = new InlineQueryResult[]
             {
