@@ -123,7 +123,7 @@ class InlineHandler
                 quote = _data.Data.quotes[index];
             }
 
-            var voice = _voiceUrl + $"{number}.ogg";
+            var voice = _voiceUrl + $"{number}.ogg?v={DateTime.UtcNow.Ticks}";
             Console.WriteLine(voice);
 
             var results = new InlineQueryResult[]
@@ -136,7 +136,7 @@ class InlineHandler
                     Description = quote[..Math.Min(80, quote.Length)]
                 },
                 new InlineQueryResultVoice(
-                    Guid.NewGuid().ToString(),
+                    Guid.NewGuid().ToString() + DateTime.UtcNow.Ticks,
                     voice,
                     title + " голосом Волка")
             };
