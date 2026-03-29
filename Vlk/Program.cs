@@ -259,7 +259,7 @@ class BotService
 
         if (text.StartsWith("/testvoice"))
         {
-            var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/30.ogg";
+            var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/3.ogg";
             await _bot.SendVoiceAsync(chatId, voiceUrl);
             return;
         }
