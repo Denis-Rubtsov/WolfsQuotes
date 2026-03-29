@@ -257,10 +257,11 @@ class BotService
             return;
         }
 
-        if (text.StartsWith("/test") && user.Id == _adminId)
+        if (text.StartsWith("/testvoice"))
         {
-            Console.WriteLine($"Отправля аудио по ссылке {_voiceUrl + "\\0.ogg"}");
-            await _bot.SendVoiceAsync(chatId, _voiceUrl + "\\0.ogg");
+            var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/30.ogg";
+            await _bot.SendVoiceAsync(chatId, voiceUrl);
+            return;
         }
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
