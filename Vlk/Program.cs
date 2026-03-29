@@ -259,7 +259,7 @@ class BotService
 
         if (text.StartsWith("/test") && user.Id == _adminId)
         {
-            await _bot.SendVoiceAsync(chatId, _voiceUrl + "/31.ogg");
+            await _bot.SendVoiceAsync(chatId, _voiceUrl + "/30.ogg");
         }
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
