@@ -121,6 +121,7 @@ class InlineHandler
             }
 
             var voice = _voiceUrl + $"/{index}.ogg?v=1";
+            if (index == 30) voice = "https://s3.ru1.storage.beget.cloud/421f8d49459f-voice-quotes/voice%2F30.ogg";
 
             var results = new InlineQueryResult[]
             {
@@ -259,7 +260,7 @@ class BotService
 
         if (text.StartsWith("/testvoice"))
         {
-            var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/3.ogg";
+            var voiceUrl = "https://s3.ru1.storage.beget.cloud/421f8d49459f-voice-quotes/voice%2F30.ogg";
             await _bot.SendVoiceAsync(chatId, voiceUrl);
             return;
         }
