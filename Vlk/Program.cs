@@ -120,7 +120,7 @@ class InlineHandler
                 quote = _data.Data.quotes[index];
             }
 
-            var voice = _voiceUrl + $"{index}.ogg?v=1";
+            var voice = _voiceUrl + $"/{index}.ogg?v=1";
 
             var results = new InlineQueryResult[]
             {
@@ -165,21 +165,18 @@ class BotService
     private readonly DataService _data;
     private readonly QuoteService _quotes;
     private readonly long _adminId;
+    private readonly string _voiceUrl;
 
     private readonly Dictionary<long, Dictionary<string, string>> _userState = new();
 
-    public BotService(
-        ITelegramBotClient bot,
-        InlineHandler inline,
-        DataService data,
-        QuoteService quotes,
-        long adminId)
+    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, long adminId, string voiceUrl)
     {
         _bot = bot;
         _inline = inline;
         _data = data;
         _quotes = quotes;
         _adminId = adminId;
+        _voiceUrl = voiceUrl;
     }
 
     public void Start()
@@ -258,6 +255,11 @@ class BotService
 
             await _bot.SendTextMessageAsync(chatId, textOut);
             return;
+        }
+
+        if (text.StartsWith("/test") && user.Id == _adminId)
+        {
+            await _bot.SendVoiceAsync(chatId, _voiceUrl + "/31.ogg");
         }
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
@@ -504,7 +506,7 @@ class Program
         var quotes = new QuoteService(data);
         var inline = new InlineHandler(quotes, data, voice);
 
-        var service = new BotService(bot, inline, data, quotes, admin);
+        var service = new BotService(bot, inline, data, quotes, admin, voice);
 
         service.Start();
 
