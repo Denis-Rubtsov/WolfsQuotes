@@ -259,7 +259,8 @@ class BotService
 
         if (text.StartsWith("/test") && user.Id == _adminId)
         {
-            await _bot.SendVoiceAsync(chatId, _voiceUrl + "0.ogg");
+            Console.WriteLine($"Отправля аудио по ссылке {_voiceUrl + "\\0.ogg"}");
+            await _bot.SendVoiceAsync(chatId, _voiceUrl + "\\0.ogg");
         }
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
