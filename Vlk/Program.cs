@@ -120,7 +120,7 @@ class InlineHandler
                 quote = _data.Data.quotes[index];
             }
 
-            var voice = $"https://s3.ru1.storage.beget.cloud/421f8d49459f-voice-quotes/voice%2F{index}}.ogg";
+            var voice = $"https://s3.ru1.storage.beget.cloud/421f8d49459f-voice-quotes/voice%2F{index}.ogg";
 
             var results = new InlineQueryResult[]
             {
