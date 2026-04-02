@@ -225,11 +225,11 @@ class BotService
             if (user.Id == _adminId)
             {
                 await _bot.SendTextMessageAsync(chatId,
-                    "Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
+                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
                 return;
             }
             await _bot.SendTextMessageAsync(chatId,
-                "/suggest\n/list\n/addquote\n/listsuggest\n/approve\n/reject\n");
+                "Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\n");
             return;
         }
 
