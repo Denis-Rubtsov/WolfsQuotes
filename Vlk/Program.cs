@@ -216,14 +216,20 @@ class BotService
         if (text.StartsWith("/start"))
         {
             await _bot.SendTextMessageAsync(chatId,
-                "Добро пожаловать в бот \"Вълчьи цитаты\".\n\n/suggest — предложить цитату\n/list — список цитат");
+                "Добро пожаловать в бот \"Вълчьи цитаты\".\n\n/help - список команд\n/start - запуск бота\n/suggest — предложить цитату\n/list — список цитат");
             return;
         }
 
         if (text.StartsWith("/help"))
         {
+            if (user.Id == _adminId)
+            {
+                await _bot.SendTextMessageAsync(chatId,
+                    "Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
+                return;
+            }
             await _bot.SendTextMessageAsync(chatId,
-                "/suggest\n/list\n/addquote\n/listsuggest\n/approve\n/reject\n/testvoice");
+                "/suggest\n/list\n/addquote\n/listsuggest\n/approve\n/reject\n");
             return;
         }
 
@@ -264,37 +270,7 @@ class BotService
             await _bot.SendTextMessageAsync(chatId, textOut);
             return;
         }
-
-        if (text.StartsWith("/testvoice") && user.Id == _adminId)
-        {
-            try
-            {
-                var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/30.ogg";
-
-                using var http = new HttpClient();
-                using var response = await http.GetAsync(voiceUrl, HttpCompletionOption.ResponseHeadersRead);
-                response.EnsureSuccessStatusCode();
-
-                await using var sourceStream = await response.Content.ReadAsStreamAsync();
-                await using var memoryStream = new MemoryStream();
-                await sourceStream.CopyToAsync(memoryStream);
-                memoryStream.Position = 0;
-
-                await _bot.SendVoiceAsync(
-                    chatId,
-                    new Telegram.Bot.Types.InputFiles.InputOnlineFile(memoryStream, "30.ogg")
-                );
-
-                await _bot.SendTextMessageAsync(chatId, "✅ Тестовое аудио отправлено");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-                await _bot.SendTextMessageAsync(chatId, $"Ошибка /testvoice: {ex.Message}");
-            }
-
-            return;
-        }
+        
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
         {
