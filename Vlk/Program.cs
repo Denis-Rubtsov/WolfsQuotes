@@ -259,19 +259,30 @@ class BotService
 
         if (text.StartsWith("/testvoice"))
         {
-            try
+            if (text.StartsWith("/testvoice") && user.Id == _adminId)
             {
-                var voiceUrl = $"{_voiceUrl.TrimEnd('/')}30.ogg";
+                try
+                {
+                    var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/30.ogg";
 
-                await _bot.SendVoiceAsync(chatId,voice:voiceUrl);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex);
-                await _bot.SendTextMessageAsync(chatId, $"Ошибка: {ex.Message}");
-            }
+                    using var http = new HttpClient();
+                    await using var stream = await http.GetStreamAsync(voiceUrl);
 
-            return;
+                    await _bot.SendVoiceAsync(
+                        chatId,
+                        new Telegram.Bot.Types.InputFiles.InputOnlineFile(stream, "30.ogg")
+                    );
+
+                    await _bot.SendTextMessageAsync(chatId, "Отправка прошла");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex);
+                    await _bot.SendTextMessageAsync(chatId, $"Ошибка: {ex.Message}");
+                }
+
+                return;
+            }
         }
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
