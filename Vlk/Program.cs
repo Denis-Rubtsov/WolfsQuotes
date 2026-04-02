@@ -259,8 +259,18 @@ class BotService
 
         if (text.StartsWith("/testvoice"))
         {
-            var voiceUrl = "https://s3.ru1.storage.beget.cloud/421f8d49459f-voice-quotes/voice%2F30.ogg";
-            await _bot.SendVoiceAsync(chatId, voiceUrl);
+            try
+            {
+                var voiceUrl = $"{_voiceUrl.TrimEnd('/')}30.ogg";
+
+                await _bot.SendVoiceAsync(chatId,voice:voiceUrl);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+                await _bot.SendTextMessageAsync(chatId, $"Ошибка: {ex.Message}");
+            }
+
             return;
         }
 

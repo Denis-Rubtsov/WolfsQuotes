@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Vlk")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+610ee5bd47fffb005741760f5390353021bef0f2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a55f7d2a939f46cbcffac4a42519455c4b541b55")]
 [assembly: System.Reflection.AssemblyProductAttribute("Vlk")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Vlk")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
