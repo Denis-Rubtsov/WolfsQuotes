@@ -257,32 +257,35 @@ class BotService
             return;
         }
 
-        if (text.StartsWith("/testvoice"))
+        if (text.StartsWith("/testvoice") && user.Id == _adminId)
         {
-            if (text.StartsWith("/testvoice") && user.Id == _adminId)
+            try
             {
-                try
-                {
-                    var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/30.ogg";
+                var voiceUrl = $"{_voiceUrl.TrimEnd('/')}/30.ogg";
 
-                    using var http = new HttpClient();
-                    await using var stream = await http.GetStreamAsync(voiceUrl);
+                using var http = new HttpClient();
+                using var response = await http.GetAsync(voiceUrl, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
 
-                    await _bot.SendVoiceAsync(
-                        chatId,
-                        new Telegram.Bot.Types.InputFiles.InputOnlineFile(stream, "30.ogg")
-                    );
+                await using var sourceStream = await response.Content.ReadAsStreamAsync();
+                await using var memoryStream = new MemoryStream();
+                await sourceStream.CopyToAsync(memoryStream);
+                memoryStream.Position = 0;
 
-                    await _bot.SendTextMessageAsync(chatId, "Отправка прошла");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex);
-                    await _bot.SendTextMessageAsync(chatId, $"Ошибка: {ex.Message}");
-                }
+                await _bot.SendVoiceAsync(
+                    chatId,
+                    new Telegram.Bot.Types.InputFiles.InputOnlineFile(memoryStream, "30.ogg")
+                );
 
-                return;
+                await _bot.SendTextMessageAsync(chatId, "✅ Тестовое аудио отправлено");
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+                await _bot.SendTextMessageAsync(chatId, $"Ошибка /testvoice: {ex.Message}");
+            }
+
+            return;
         }
 
         if (text.StartsWith("/reject") && user.Id == _adminId)
