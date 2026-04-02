@@ -181,6 +181,14 @@ class BotService
 
     public void Start()
     {
+        _bot.SetMyCommandsAsync(new[]
+        {
+            new BotCommand { Command = "suggest", Description = "Предложить цитату" },
+            new BotCommand { Command = "list", Description = "Список цитат" },
+            new BotCommand { Command = "help", Description = "Показать помощь" },
+            new BotCommand { Command = "testvoice", Description = "Тест отправки голосового" }
+        }).GetAwaiter().GetResult();
+
         _bot.StartReceiving(Update, Error);
     }
 
@@ -215,7 +223,7 @@ class BotService
         if (text.StartsWith("/help"))
         {
             await _bot.SendTextMessageAsync(chatId,
-                "/suggest\n/list\n/addquote\n/listsuggest\n/approve\n/reject");
+                "/suggest\n/list\n/addquote\n/listsuggest\n/approve\n/reject\n/testvoice");
             return;
         }
 
