@@ -185,8 +185,7 @@ class BotService
         {
             new BotCommand { Command = "suggest", Description = "Предложить цитату" },
             new BotCommand { Command = "list", Description = "Список цитат" },
-            new BotCommand { Command = "help", Description = "Показать помощь" },
-            new BotCommand { Command = "testvoice", Description = "Тест отправки голосового" }
+            new BotCommand { Command = "help", Description = "Показать помощь" }
         }).GetAwaiter().GetResult();
 
         _bot.StartReceiving(Update, Error);
