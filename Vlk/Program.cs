@@ -102,7 +102,7 @@ class InlineHandler
                     await bot.AnswerInlineQueryAsync(
                         query.Id,
                         Array.Empty<InlineQueryResult>(),
-                        cacheTime: 11,
+                        cacheTime: 0,
                         isPersonal: true,
                         null,
                         switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
@@ -140,10 +140,10 @@ class InlineHandler
             await bot.AnswerInlineQueryAsync(
                 query.Id,
                 results,
-                cacheTime: 11,
+                cacheTime: 0,
                 isPersonal: true,
                 null,
-                switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}",
+                switchPmText: $"Введите целое число от 1 до {_data.Data.quotes.Count}\nГолосовые цитаты временно не работают",
                 "start"
             );
         }
@@ -185,7 +185,7 @@ class BotService
         {
             new BotCommand { Command = "suggest", Description = "Предложить цитату" },
             new BotCommand { Command = "list", Description = "Список цитат" },
-            new BotCommand { Command = "help", Description = "Показать помощь" }
+            new BotCommand { Command = "help", Description = "Показать помощь" },
         }).GetAwaiter().GetResult();
 
         _bot.StartReceiving(Update, Error);
