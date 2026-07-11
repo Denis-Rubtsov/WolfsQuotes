@@ -36,6 +36,33 @@ class BotService
             new BotCommand { Command = "help", Description = "Показать помощь" },
         }).GetAwaiter().GetResult();
 
+        var adminCommands = new[]
+        {
+            new BotCommand { Command = "suggest", Description = "Предложить цитату" },
+            new BotCommand { Command = "generate", Description = "Сгенерировать цитату через ИИ" },
+            new BotCommand { Command = "addquote", Description = "Добавить цитату" },
+            new BotCommand { Command = "editquote", Description = "Редактировать цитату" },
+            new BotCommand { Command = "deletequote", Description = "Удалить цитату" },
+            new BotCommand { Command = "listsuggest", Description = "Список предложений" },
+            new BotCommand { Command = "approve", Description = "Принять предложение" },
+            new BotCommand { Command = "reject", Description = "Отклонить предложение" },
+            new BotCommand { Command = "list", Description = "Список цитат" },
+            new BotCommand { Command = "help", Description = "Показать помощь" },
+        };
+
+        foreach (var adminId in _adminIds)
+        {
+            try
+            {
+                _bot.SetMyCommandsAsync(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId })
+                    .GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Не удалось установить меню команд для админа {adminId}: {ex}");
+            }
+        }
+
         _bot.StartReceiving(Update, Error);
     }
 
