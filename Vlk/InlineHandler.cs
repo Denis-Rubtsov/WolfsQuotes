@@ -123,9 +123,20 @@ class InlineHandler
         }
     }
 
+    private bool CanGenerate(long userId)
+    {
+        if (_adminIds.Contains(userId))
+            return true;
+
+        lock (_data.Lock)
+        {
+            return _data.Data.allow_public_generation;
+        }
+    }
+
     private async Task HandleAiGeneration(ITelegramBotClient bot, InlineQuery query)
     {
-        if (!_adminIds.Contains(query.From.Id))
+        if (!CanGenerate(query.From.Id))
         {
             await bot.AnswerInlineQueryAsync(
                 query.Id,

@@ -25,12 +25,13 @@ class Program
             .ToList();
         var voice = config["BASIC_URL"] ?? "";
         var aiApiKey = config["AiApikey"];
+        var promptFile = config["SystemPromptFile"];
 
         var bot = new TelegramBotClient(token);
 
         var data = new DataService(quotesFile);
         var quotes = new QuoteService(data);
-        var ai = new AiQuoteService(aiApiKey, data);
+        var ai = new AiQuoteService(aiApiKey, promptFile, data, loggerFactory.CreateLogger<AiQuoteService>());
         var inline = new InlineHandler(data, ai, adminIds, voice, loggerFactory.CreateLogger<InlineHandler>());
 
         var service = new BotService(bot, inline, data, quotes, ai, adminIds, voice, loggerFactory.CreateLogger<BotService>());

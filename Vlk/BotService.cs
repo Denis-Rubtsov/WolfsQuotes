@@ -58,6 +58,7 @@ class BotService
             new BotCommand { Command = "listsuggest", Description = "Список предложений" },
             new BotCommand { Command = "approve", Description = "Принять предложение" },
             new BotCommand { Command = "reject", Description = "Отклонить предложение" },
+            new BotCommand { Command = "publicgen", Description = "Вкл/выкл генерацию для всех" },
             new BotCommand { Command = "list", Description = "Список цитат" },
             new BotCommand { Command = "help", Description = "Показать помощь" },
         };
@@ -79,6 +80,17 @@ class BotService
     }
 
     private bool IsAdmin(long userId) => _adminIds.Contains(userId);
+
+    private bool CanGenerate(long userId)
+    {
+        if (IsAdmin(userId))
+            return true;
+
+        lock (_data.Lock)
+        {
+            return _data.Data.allow_public_generation;
+        }
+    }
 
     private async Task Update(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
@@ -130,8 +142,12 @@ class BotService
                 await HandleSuggest(chatId, user.Id);
                 break;
 
-            case "/generate" when IsAdmin(user.Id):
+            case "/generate" when CanGenerate(user.Id):
                 await HandleGenerate(chatId, user.Id);
+                break;
+
+            case "/publicgen" when IsAdmin(user.Id):
+                await HandleTogglePublicGeneration(chatId);
                 break;
 
             case "/addquote" when IsAdmin(user.Id):
@@ -194,12 +210,16 @@ class BotService
         if (IsAdmin(userId))
         {
             await _bot.SendTextMessageAsync(chatId,
-                "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
+                "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/publicgen - вкл/выкл генерацию для всех\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
             return;
         }
 
+        var generateLine = CanGenerate(userId)
+            ? "\n/generate - сгенерировать цитату через ИИ (уйдёт на модерацию)"
+            : "";
+
         await _bot.SendTextMessageAsync(chatId,
-            "Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\n");
+            $"Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату{generateLine}\n/list - список цитат\n");
     }
 
     private async Task HandleList(long chatId)
@@ -244,13 +264,36 @@ class BotService
             return;
         }
 
-        SetState(userId, new UserState { Mode = UserMode.Add, PendingQuote = generated });
+        // Админ добавляет сразу в базу, обычный пользователь — через очередь предложений.
+        var forAdd = IsAdmin(userId);
+
+        SetState(userId, new UserState
+        {
+            Mode = forAdd ? UserMode.Add : UserMode.Suggest,
+            PendingQuote = generated
+        });
 
         await _bot.EditMessageTextAsync(
             chatId,
             placeholder.MessageId,
-            $"🐺 Сгенерированная цитата:\n\n{generated}\n\nДобавить её в базу?",
-            replyMarkup: GeneratedQuoteKeyboard());
+            GeneratedQuoteText(generated, forAdd),
+            replyMarkup: GeneratedQuoteKeyboard(forAdd));
+    }
+
+    private async Task HandleTogglePublicGeneration(long chatId)
+    {
+        bool enabled;
+        lock (_data.Lock)
+        {
+            _data.Data.allow_public_generation = !_data.Data.allow_public_generation;
+            enabled = _data.Data.allow_public_generation;
+            _data.Save();
+        }
+
+        await _bot.SendTextMessageAsync(chatId,
+            enabled
+                ? "🌍 Генерация цитат через ИИ теперь доступна всем. Цитаты обычных пользователей идут в очередь предложений."
+                : "🔒 Генерация цитат через ИИ снова доступна только админам.");
     }
 
     private async Task HandleAddQuote(long chatId, long userId)
@@ -545,7 +588,7 @@ class BotService
             return;
         }
 
-        if (query.Data == "regenerate" && state.Mode == UserMode.Add)
+        if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id))
         {
             string regenerated;
             try
@@ -561,11 +604,13 @@ class BotService
 
             TrySetPendingQuote(user.Id, regenerated);
 
+            var forAdd = state.Mode == UserMode.Add;
+
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                $"🐺 Сгенерированная цитата:\n\n{regenerated}\n\nДобавить её в базу?",
-                replyMarkup: GeneratedQuoteKeyboard());
+                GeneratedQuoteText(regenerated, forAdd),
+                replyMarkup: GeneratedQuoteKeyboard(forAdd));
 
             await _bot.AnswerCallbackQueryAsync(query.Id);
             return;
@@ -710,12 +755,16 @@ class BotService
         }
     }
 
-    private static InlineKeyboardMarkup GeneratedQuoteKeyboard() =>
+    private static string GeneratedQuoteText(string quote, bool forAdd) =>
+        $"🐺 Сгенерированная цитата:\n\n{quote}\n\n" +
+        (forAdd ? "Добавить её в базу?" : "Предложить её на добавление?");
+
+    private static InlineKeyboardMarkup GeneratedQuoteKeyboard(bool forAdd) =>
         new(new[]
         {
             new[]
             {
-                InlineKeyboardButton.WithCallbackData("✅ Добавить", "confirm"),
+                InlineKeyboardButton.WithCallbackData(forAdd ? "✅ Добавить" : "✅ Предложить", "confirm"),
                 InlineKeyboardButton.WithCallbackData("🔄 Перегенерировать", "regenerate"),
                 InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
             }
