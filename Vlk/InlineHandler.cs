@@ -109,7 +109,7 @@ class InlineHandler
                 cacheTime: 0,
                 isPersonal: true,
                 null,
-                switchPmText: $"Введите целое число от 1 до {quoteCount}\nГолосовые цитаты временно не работают",
+                switchPmText: $"Введите целое число от 1 до {quoteCount}",
                 "start"
             );
         }
