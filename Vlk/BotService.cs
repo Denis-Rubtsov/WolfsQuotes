@@ -361,6 +361,8 @@ class BotService
             await _bot.SendTextMessageAsync(chatId,
                 $"✅ Добавлено: {suggestion.quote}");
 
+            await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
+
             return;
         }
 
@@ -424,6 +426,9 @@ class BotService
                 query.Message.MessageId,
                 suggestion != null ? "✅ Цитата одобрена и добавлена." : "⚠️ Это предложение уже обработано."
             );
+
+            if (suggestion != null)
+                await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
 
             return;
         }
@@ -610,6 +615,8 @@ class BotService
                         query.Message!.Chat.Id,
                         query.Message.MessageId,
                         "🔥 Цитата добавлена.");
+
+                    await NotifyAdminsQuoteAdded(quote, user.Id, user.Username ?? user.FirstName);
                 }
                 else
                 {
@@ -658,6 +665,26 @@ class BotService
         lock (_userStateLock)
         {
             _userState.Remove(user.Id);
+        }
+    }
+
+    private async Task NotifyAdminsQuoteAdded(string quote, long actorId, string actorLabel)
+    {
+        var text = $"🐺 Новая цитата в базе (добавил @{actorLabel}):\n\n{quote}";
+
+        foreach (var adminId in _adminIds)
+        {
+            if (adminId == actorId)
+                continue;
+
+            try
+            {
+                await _bot.SendTextMessageAsync(adminId, text);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Не удалось уведомить админа {adminId} о новой цитате: {ex}");
+            }
         }
     }
 
