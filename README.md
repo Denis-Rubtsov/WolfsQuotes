@@ -72,4 +72,4 @@ dotnet run
 
 ## Лицензия
 
-Не указана.
+[GNU AGPLv3](LICENSE).
