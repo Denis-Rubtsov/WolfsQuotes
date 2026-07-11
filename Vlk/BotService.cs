@@ -10,20 +10,20 @@ class BotService
     private readonly DataService _data;
     private readonly QuoteService _quotes;
     private readonly AiQuoteService _ai;
-    private readonly long _adminId;
+    private readonly HashSet<long> _adminIds;
     private readonly string _voiceUrl;
 
     private readonly object _userStateLock = new();
     private readonly Dictionary<long, Dictionary<string, string>> _userState = new();
 
-    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, AiQuoteService ai, long adminId, string voiceUrl)
+    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl)
     {
         _bot = bot;
         _inline = inline;
         _data = data;
         _quotes = quotes;
         _ai = ai;
-        _adminId = adminId;
+        _adminIds = new HashSet<long>(adminIds);
         _voiceUrl = voiceUrl;
     }
 
@@ -32,13 +32,14 @@ class BotService
         _bot.SetMyCommandsAsync(new[]
         {
             new BotCommand { Command = "suggest", Description = "Предложить цитату" },
-            new BotCommand { Command = "generate", Description = "Сгенерировать цитату через ИИ" },
             new BotCommand { Command = "list", Description = "Список цитат" },
             new BotCommand { Command = "help", Description = "Показать помощь" },
         }).GetAwaiter().GetResult();
 
         _bot.StartReceiving(Update, Error);
     }
+
+    private bool IsAdmin(long userId) => _adminIds.Contains(userId);
 
     private async Task Update(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
@@ -67,20 +68,20 @@ class BotService
         if (text.StartsWith("/start"))
         {
             await _bot.SendTextMessageAsync(chatId,
-                "Добро пожаловать в бот \"Вълчьи цитаты\".\n\n/help - список команд\n/start - запуск бота\n/suggest — предложить цитату\n/generate — сгенерировать цитату через ИИ\n/list — список цитат");
+                "Добро пожаловать в бот \"Вълчьи цитаты\".\n\n/help - список команд\n/start - запуск бота\n/suggest — предложить цитату\n/list — список цитат");
             return;
         }
 
         if (text.StartsWith("/help"))
         {
-            if (user.Id == _adminId)
+            if (IsAdmin(user.Id))
             {
                 await _bot.SendTextMessageAsync(chatId,
-                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/generate - сгенерировать цитату через ИИ\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
+                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/generate - сгенерировать цитату через ИИ\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
                 return;
             }
             await _bot.SendTextMessageAsync(chatId,
-                "Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/generate - сгенерировать цитату через ИИ\n/list - список цитат\n");
+                "Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\n");
             return;
         }
 
@@ -111,7 +112,7 @@ class BotService
             return;
         }
 
-        if (text.StartsWith("/generate"))
+        if (text.StartsWith("/generate") && IsAdmin(user.Id))
         {
             var placeholder = await _bot.SendTextMessageAsync(chatId, "🐺 Генерирую цитату...");
 
@@ -132,7 +133,7 @@ class BotService
             {
                 _userState[user.Id] = new Dictionary<string, string>
                 {
-                    ["mode"] = "suggest",
+                    ["mode"] = "add",
                     ["pending_quote"] = generated
                 };
             }
@@ -140,19 +141,58 @@ class BotService
             await _bot.EditMessageTextAsync(
                 chatId,
                 placeholder.MessageId,
-                $"🐺 Сгенерированная цитата:\n\n{generated}\n\nПредложить её на добавление?",
+                $"🐺 Сгенерированная цитата:\n\n{generated}\n\nДобавить её в базу?",
                 replyMarkup: GeneratedQuoteKeyboard());
             return;
         }
 
-        if (text.StartsWith("/addquote") && user.Id == _adminId)
+        if (text.StartsWith("/addquote") && IsAdmin(user.Id))
         {
             SetMode(user.Id, "add");
             await _bot.SendTextMessageAsync(chatId, "Введите цитату для добавления.");
             return;
         }
 
-        if (text.StartsWith("/listsuggest") && user.Id == _adminId)
+        if (text.StartsWith("/editquote") && IsAdmin(user.Id))
+        {
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int index))
+            {
+                await _bot.SendTextMessageAsync(chatId, "Использование: /editquote <номер>");
+                return;
+            }
+
+            index -= 1;
+
+            string? current = null;
+            lock (_data.Lock)
+            {
+                if (index >= 0 && index < _data.Data.quotes.Count)
+                    current = _data.Data.quotes[index];
+            }
+
+            if (current == null)
+            {
+                await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты");
+                return;
+            }
+
+            lock (_userStateLock)
+            {
+                _userState[user.Id] = new Dictionary<string, string>
+                {
+                    ["mode"] = "edit",
+                    ["edit_index"] = index.ToString()
+                };
+            }
+
+            await _bot.SendTextMessageAsync(chatId,
+                $"✏️ Текущая цитата №{index + 1}:\n\n{current}\n\nВведите новый текст.");
+            return;
+        }
+
+        if (text.StartsWith("/listsuggest") && IsAdmin(user.Id))
         {
             List<Suggestion> suggestionsSnapshot;
             lock (_data.Lock)
@@ -175,7 +215,7 @@ class BotService
         }
 
 
-        if (text.StartsWith("/reject") && user.Id == _adminId)
+        if (text.StartsWith("/reject") && IsAdmin(user.Id))
         {
             var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
@@ -210,7 +250,7 @@ class BotService
             return;
         }
 
-        if (text.StartsWith("/approve") && user.Id == _adminId)
+        if (text.StartsWith("/approve") && IsAdmin(user.Id))
         {
             var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
@@ -283,7 +323,7 @@ class BotService
         var query = update.CallbackQuery!;
         var user = query.From;
 
-        if (query.Data != null && query.Data.StartsWith("approve_") && user.Id == _adminId)
+        if (query.Data != null && query.Data.StartsWith("approve_") && IsAdmin(user.Id))
         {
             var id = query.Data.Substring("approve_".Length);
             Suggestion? suggestion = null;
@@ -313,7 +353,7 @@ class BotService
             return;
         }
 
-        if (query.Data != null && query.Data.StartsWith("reject_") && user.Id == _adminId)
+        if (query.Data != null && query.Data.StartsWith("reject_") && IsAdmin(user.Id))
         {
             var id = query.Data.Substring("reject_".Length);
             bool removed;
@@ -341,6 +381,7 @@ class BotService
 
         string? quote = null;
         string? mode = null;
+        string? editIndexRaw = null;
 
         lock (_userStateLock)
         {
@@ -350,6 +391,7 @@ class BotService
             {
                 quote = pendingQuote;
                 mode = pendingMode;
+                state.TryGetValue("edit_index", out editIndexRaw);
             }
         }
 
@@ -359,7 +401,7 @@ class BotService
             return;
         }
 
-        if (query.Data == "regenerate" && mode == "suggest")
+        if (query.Data == "regenerate" && mode == "add")
         {
             string regenerated;
             try
@@ -381,7 +423,7 @@ class BotService
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                $"🐺 Сгенерированная цитата:\n\n{regenerated}\n\nПредложить её на добавление?",
+                $"🐺 Сгенерированная цитата:\n\n{regenerated}\n\nДобавить её в базу?",
                 replyMarkup: GeneratedQuoteKeyboard());
 
             await _bot.AnswerCallbackQueryAsync(query.Id);
@@ -405,24 +447,27 @@ class BotService
                     _data.Save();
                 }
 
-                try
+                foreach (var adminId in _adminIds)
                 {
-                    await _bot.SendTextMessageAsync(
-                        _adminId,
-                        $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
-                        replyMarkup: new InlineKeyboardMarkup(new[]
-                        {
-                            new[]
+                    try
+                    {
+                        await _bot.SendTextMessageAsync(
+                            adminId,
+                            $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
+                            replyMarkup: new InlineKeyboardMarkup(new[]
                             {
-                                InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{suggestion.id}"),
-                                InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
-                            }
-                        })
-                    );
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Не удалось уведомить админа о новом предложении: {ex}");
+                                new[]
+                                {
+                                    InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{suggestion.id}"),
+                                    InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
+                                }
+                            })
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Не удалось уведомить админа {adminId} о новом предложении: {ex}");
+                    }
                 }
 
                 try
@@ -435,7 +480,7 @@ class BotService
                 }
             }
 
-            if (mode == "add" && user.Id == _adminId)
+            if (mode == "add" && IsAdmin(user.Id))
             {
                 bool added;
                 lock (_data.Lock)
@@ -463,6 +508,32 @@ class BotService
                         "⚠️ Такая цитата уже существует.");
                 }
             }
+
+            if (mode == "edit" && IsAdmin(user.Id))
+            {
+                bool applied = false;
+                int editIndex = -1;
+
+                if (editIndexRaw != null && int.TryParse(editIndexRaw, out editIndex))
+                {
+                    lock (_data.Lock)
+                    {
+                        if (editIndex >= 0 && editIndex < _data.Data.quotes.Count)
+                        {
+                            _data.Data.quotes[editIndex] = quote;
+                            _data.Save();
+                            applied = true;
+                        }
+                    }
+                }
+
+                await _bot.EditMessageTextAsync(
+                    query.Message!.Chat.Id,
+                    query.Message.MessageId,
+                    applied
+                        ? $"✏️ Цитата №{editIndex + 1} обновлена."
+                        : "⚠️ Цитата больше не существует.");
+            }
         }
 
         if (query.Data == "cancel")
@@ -484,7 +555,7 @@ class BotService
         {
             new[]
             {
-                InlineKeyboardButton.WithCallbackData("✅ Предложить", "confirm"),
+                InlineKeyboardButton.WithCallbackData("✅ Добавить", "confirm"),
                 InlineKeyboardButton.WithCallbackData("🔄 Перегенерировать", "regenerate"),
                 InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
             }
