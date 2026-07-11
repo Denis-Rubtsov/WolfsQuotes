@@ -137,21 +137,11 @@ class BotService
                 };
             }
 
-            var generateKeyboard = new InlineKeyboardMarkup(
-                new[]
-                {
-                    new[]
-                    {
-                        InlineKeyboardButton.WithCallbackData("✅ Предложить", "confirm"),
-                        InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
-                    }
-                });
-
             await _bot.EditMessageTextAsync(
                 chatId,
                 placeholder.MessageId,
                 $"🐺 Сгенерированная цитата:\n\n{generated}\n\nПредложить её на добавление?",
-                replyMarkup: generateKeyboard);
+                replyMarkup: GeneratedQuoteKeyboard());
             return;
         }
 
@@ -369,6 +359,35 @@ class BotService
             return;
         }
 
+        if (query.Data == "regenerate" && mode == "suggest")
+        {
+            string regenerated;
+            try
+            {
+                regenerated = await _ai.GenerateQuoteAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка перегенерации цитаты через ИИ: {ex}");
+                await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Не удалось перегенерировать цитату.", showAlert: true);
+                return;
+            }
+
+            lock (_userStateLock)
+            {
+                _userState[user.Id]["pending_quote"] = regenerated;
+            }
+
+            await _bot.EditMessageTextAsync(
+                query.Message!.Chat.Id,
+                query.Message.MessageId,
+                $"🐺 Сгенерированная цитата:\n\n{regenerated}\n\nПредложить её на добавление?",
+                replyMarkup: GeneratedQuoteKeyboard());
+
+            await _bot.AnswerCallbackQueryAsync(query.Id);
+            return;
+        }
+
         if (query.Data == "confirm")
         {
             if (mode == "suggest")
@@ -450,6 +469,17 @@ class BotService
             _userState.Remove(user.Id);
         }
     }
+
+    private static InlineKeyboardMarkup GeneratedQuoteKeyboard() =>
+        new(new[]
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData("✅ Предложить", "confirm"),
+                InlineKeyboardButton.WithCallbackData("🔄 Перегенерировать", "regenerate"),
+                InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
+            }
+        });
 
     private void SetMode(long userId, string mode)
     {
