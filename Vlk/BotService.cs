@@ -77,7 +77,7 @@ class BotService
             if (IsAdmin(user.Id))
             {
                 await _bot.SendTextMessageAsync(chatId,
-                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/generate - сгенерировать цитату через ИИ\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
+                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
                 return;
             }
             await _bot.SendTextMessageAsync(chatId,
@@ -189,6 +189,47 @@ class BotService
 
             await _bot.SendTextMessageAsync(chatId,
                 $"✏️ Текущая цитата №{index + 1}:\n\n{current}\n\nВведите новый текст.");
+            return;
+        }
+
+        if (text.StartsWith("/deletequote") && IsAdmin(user.Id))
+        {
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int index))
+            {
+                await _bot.SendTextMessageAsync(chatId, "Использование: /deletequote <номер>");
+                return;
+            }
+
+            index -= 1;
+
+            string? current = null;
+            lock (_data.Lock)
+            {
+                if (index >= 0 && index < _data.Data.quotes.Count)
+                    current = _data.Data.quotes[index];
+            }
+
+            if (current == null)
+            {
+                await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты");
+                return;
+            }
+
+            var deleteKeyboard = new InlineKeyboardMarkup(
+                new[]
+                {
+                    new[]
+                    {
+                        InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"delquote_{index}"),
+                        InlineKeyboardButton.WithCallbackData("❌ Отменить", "delquote_cancel")
+                    }
+                });
+
+            await _bot.SendTextMessageAsync(chatId,
+                $"Удалить цитату №{index + 1}?\n\n{current}",
+                replyMarkup: deleteKeyboard);
             return;
         }
 
@@ -374,6 +415,42 @@ class BotService
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
                 removed ? "❌ Цитата отклонена." : "⚠️ Это предложение уже обработано."
+            );
+
+            return;
+        }
+
+        if (query.Data != null && query.Data.StartsWith("delquote_") && IsAdmin(user.Id))
+        {
+            var rest = query.Data.Substring("delquote_".Length);
+
+            if (rest == "cancel")
+            {
+                await _bot.EditMessageTextAsync(
+                    query.Message!.Chat.Id,
+                    query.Message.MessageId,
+                    "❌ Удаление отменено.");
+                return;
+            }
+
+            string? removedQuote = null;
+            if (int.TryParse(rest, out int deleteIndex))
+            {
+                lock (_data.Lock)
+                {
+                    if (deleteIndex >= 0 && deleteIndex < _data.Data.quotes.Count)
+                    {
+                        removedQuote = _data.Data.quotes[deleteIndex];
+                        _data.Data.quotes.RemoveAt(deleteIndex);
+                        _data.Save();
+                    }
+                }
+            }
+
+            await _bot.EditMessageTextAsync(
+                query.Message!.Chat.Id,
+                query.Message.MessageId,
+                removedQuote != null ? $"🗑 Удалено: {removedQuote}" : "⚠️ Такой цитаты уже нет."
             );
 
             return;
