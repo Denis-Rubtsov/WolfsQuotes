@@ -29,12 +29,19 @@ class BotService
 
     public void Start()
     {
-        _bot.SetMyCommandsAsync(new[]
+        try
         {
-            new BotCommand { Command = "suggest", Description = "Предложить цитату" },
-            new BotCommand { Command = "list", Description = "Список цитат" },
-            new BotCommand { Command = "help", Description = "Показать помощь" },
-        }).GetAwaiter().GetResult();
+            _bot.SetMyCommandsAsync(new[]
+            {
+                new BotCommand { Command = "suggest", Description = "Предложить цитату" },
+                new BotCommand { Command = "list", Description = "Список цитат" },
+                new BotCommand { Command = "help", Description = "Показать помощь" },
+            }).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Не удалось установить меню команд по умолчанию: {ex}");
+        }
 
         var adminCommands = new[]
         {
