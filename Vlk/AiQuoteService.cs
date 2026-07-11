@@ -19,7 +19,7 @@ class AiQuoteService
         {
             examples = _data.Data.quotes
                 .OrderBy(_ => _random.Next())
-                .Take(5)
+                .Take(10)
                 .ToList();
         }
 
