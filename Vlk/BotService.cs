@@ -111,7 +111,7 @@ class BotService
             if (IsAdmin(user.Id))
             {
                 await _bot.SendTextMessageAsync(chatId,
-                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение");
+                    "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
                 return;
             }
             await _bot.SendTextMessageAsync(chatId,

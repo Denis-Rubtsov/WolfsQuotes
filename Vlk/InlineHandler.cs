@@ -5,12 +5,16 @@ using Telegram.Bot.Types.InlineQueryResults;
 class InlineHandler
 {
     private readonly DataService _data;
+    private readonly AiQuoteService _ai;
+    private readonly HashSet<long> _adminIds;
     private readonly string _voiceUrl;
     private readonly Random _random = new();
 
-    public InlineHandler(QuoteService quotes, DataService data, string voiceUrl)
+    public InlineHandler(QuoteService quotes, DataService data, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl)
     {
         _data = data;
+        _ai = ai;
+        _adminIds = new HashSet<long>(adminIds);
         _voiceUrl = voiceUrl;
     }
 
@@ -19,6 +23,12 @@ class InlineHandler
         try
         {
             var input = query.Query.Trim();
+
+            if (input.Equals("ai", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleAiGeneration(bot, query);
+                return;
+            }
 
             List<string> quotesSnapshot;
             lock (_data.Lock)
@@ -108,5 +118,63 @@ class InlineHandler
         {
             Console.WriteLine(ex);
         }
+    }
+
+    private async Task HandleAiGeneration(ITelegramBotClient bot, InlineQuery query)
+    {
+        if (!_adminIds.Contains(query.From.Id))
+        {
+            await bot.AnswerInlineQueryAsync(
+                query.Id,
+                Array.Empty<InlineQueryResult>(),
+                cacheTime: 0,
+                isPersonal: true,
+                null,
+                switchPmText: "Генерация через ИИ доступна только админам",
+                "start"
+            );
+            return;
+        }
+
+        string generated;
+        try
+        {
+            generated = await _ai.GenerateQuoteAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка генерации цитаты через ИИ в inline-режиме: {ex}");
+            await bot.AnswerInlineQueryAsync(
+                query.Id,
+                Array.Empty<InlineQueryResult>(),
+                cacheTime: 0,
+                isPersonal: true,
+                null,
+                switchPmText: "Не удалось сгенерировать цитату",
+                "start"
+            );
+            return;
+        }
+
+        var results = new InlineQueryResult[]
+        {
+            new InlineQueryResultArticle(
+                Guid.NewGuid().ToString(),
+                "🐺 Цитата от ИИ",
+                new InputTextMessageContent(generated))
+            {
+                Description = generated[..Math.Min(80, generated.Length)]
+            }
+        };
+
+        await bot.AnswerInlineQueryAsync(
+            query.Id,
+            results,
+            cacheTime: 0,
+            isPersonal: true,
+            null,
+            switchPmText: "Введите \"ai\" ещё раз для новой генерации",
+            "start"
+        );
     }
 }

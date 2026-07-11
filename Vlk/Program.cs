@@ -14,7 +14,8 @@ class Program
         var token = config["TelegramBot:Token"];
         var adminIds = (config["ADMIN_IDS"] ?? "0")
             .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(id => long.Parse(id.Trim()));
+            .Select(id => long.Parse(id.Trim()))
+            .ToList();
         var voice = config["BASIC_URL"] ?? "";
         var aiApiKey = config["AiApikey"];
 
@@ -22,8 +23,8 @@ class Program
 
         var data = new DataService(quotesFile);
         var quotes = new QuoteService(data);
-        var inline = new InlineHandler(quotes, data, voice);
         var ai = new AiQuoteService(aiApiKey, data);
+        var inline = new InlineHandler(quotes, data, ai, adminIds, voice);
 
         var service = new BotService(bot, inline, data, quotes, ai, adminIds, voice);
 
