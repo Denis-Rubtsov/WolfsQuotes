@@ -10,3 +10,6 @@ obj/
 .idea/
 .vs/
 .vscode/
+
+## macOS
+.DS_Store
