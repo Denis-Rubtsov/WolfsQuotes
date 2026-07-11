@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.InlineQueryResults;
@@ -8,14 +9,16 @@ class InlineHandler
     private readonly AiQuoteService _ai;
     private readonly HashSet<long> _adminIds;
     private readonly string _voiceUrl;
+    private readonly ILogger<InlineHandler> _logger;
     private readonly Random _random = new();
 
-    public InlineHandler(QuoteService quotes, DataService data, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl)
+    public InlineHandler(DataService data, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, ILogger<InlineHandler> logger)
     {
         _data = data;
         _ai = ai;
         _adminIds = new HashSet<long>(adminIds);
         _voiceUrl = voiceUrl;
+        _logger = logger;
     }
 
     public async Task Handle(ITelegramBotClient bot, InlineQuery query)
@@ -116,7 +119,7 @@ class InlineHandler
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex);
+            _logger.LogError(ex, "Ошибка обработки inline-запроса");
         }
     }
 
@@ -143,7 +146,7 @@ class InlineHandler
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Ошибка генерации цитаты через ИИ в inline-режиме: {ex}");
+            _logger.LogError(ex, "Ошибка генерации цитаты через ИИ в inline-режиме");
             await bot.AnswerInlineQueryAsync(
                 query.Id,
                 Array.Empty<InlineQueryResult>(),
