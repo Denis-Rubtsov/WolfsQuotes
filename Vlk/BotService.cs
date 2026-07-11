@@ -424,6 +424,15 @@ class BotService
                 {
                     Console.WriteLine($"Не удалось уведомить админа о новом предложении: {ex}");
                 }
+
+                try
+                {
+                    await _bot.DeleteMessageAsync(query.Message!.Chat.Id, query.Message.MessageId);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Не удалось удалить сообщение с цитатой: {ex}");
+                }
             }
 
             if (mode == "add" && user.Id == _adminId)
