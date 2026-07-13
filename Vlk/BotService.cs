@@ -46,6 +46,7 @@ class BotService
                 new BotCommand { Command = "quote", Description = "Случайная цитата" },
                 new BotCommand { Command = "suggest", Description = "Предложить цитату" },
                 new BotCommand { Command = "list", Description = "Список цитат" },
+                new BotCommand { Command = "guide", Description = "Подробный гайд по боту" },
                 new BotCommand { Command = "help", Description = "Показать помощь" },
             }).GetAwaiter().GetResult();
         }
@@ -69,6 +70,7 @@ class BotService
             new BotCommand { Command = "stats", Description = "Статистика" },
             new BotCommand { Command = "export", Description = "Экспорт базы цитат" },
             new BotCommand { Command = "list", Description = "Список цитат" },
+            new BotCommand { Command = "guide", Description = "Подробный гайд по боту" },
             new BotCommand { Command = "help", Description = "Показать помощь" },
         };
 
@@ -141,6 +143,10 @@ class BotService
 
             case "/help":
                 await HandleHelp(chatId, user.Id);
+                break;
+
+            case "/guide":
+                await HandleGuide(chatId, user.Id);
                 break;
 
             case "/list":
@@ -240,7 +246,81 @@ class BotService
             : "";
 
         await _bot.SendTextMessageAsync(chatId,
-            $"Список команд:\n\n/help - список команд\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату{generateLine}\n/list - список цитат\n");
+            $"Список команд:\n\n/help - список команд\n/guide - подробный гайд по боту\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату{generateLine}\n/list - список цитат\n");
+    }
+
+    private async Task HandleGuide(long chatId, long userId)
+    {
+        var text = new StringBuilder();
+
+        text.AppendLine("📖 Подробный гайд по боту \"Вълчьи цитаты\"");
+        text.AppendLine();
+        text.AppendLine("🐺 Получить цитату");
+        text.AppendLine("/quote — бот пришлёт случайную цитату из базы. Под ней есть кнопки 👍/👎: " +
+                        "у каждого пользователя один голос на цитату, повторное нажатие снимает голос, " +
+                        "нажатие на противоположную кнопку переносит его.");
+        text.AppendLine();
+        text.AppendLine("📜 Список цитат");
+        text.AppendLine("/list — вся база пронумерованным списком. Номера из него используются в inline-режиме и в админских командах.");
+        text.AppendLine();
+        text.AppendLine("✍️ Предложить свою цитату");
+        text.AppendLine("1. Отправьте /suggest.");
+        text.AppendLine("2. Следующим сообщением пришлите текст цитаты.");
+        text.AppendLine("3. Подтвердите отправку кнопкой — предложение уйдёт на модерацию админам.");
+        text.AppendLine("После одобрения цитата появится в базе. На ввод даётся 30 минут, потом заявка сбрасывается.");
+        text.AppendLine();
+        text.AppendLine("🤖 Генерация через ИИ");
+
+        if (IsAdmin(userId))
+        {
+            text.AppendLine("/generate — бот сгенерирует цитату в стиле существующих. Перед добавлением её можно перегенерировать кнопкой. " +
+                            "Как админ вы добавляете результат сразу в базу, без модерации и без лимитов.");
+        }
+        else if (CanGenerate(userId))
+        {
+            text.AppendLine("/generate — бот сгенерирует цитату в стиле существующих. Перед отправкой её можно перегенерировать кнопкой; " +
+                            "результат уходит в очередь предложений на модерацию. Лимит — 5 генераций в час.");
+        }
+        else
+        {
+            text.AppendLine("Сейчас генерация доступна только админам. Когда админы откроют её командой /publicgen, " +
+                            "появится команда /generate: результат уходит на модерацию, лимит — 5 генераций в час.");
+        }
+
+        text.AppendLine();
+        text.AppendLine("⚡ Inline-режим (в любом чате)");
+        text.AppendLine("Напишите @имя_бота в поле сообщения:");
+        text.AppendLine("• @имя_бота — случайная цитата;");
+        text.AppendLine("• @имя_бота 5 — цитата №5 из /list.");
+
+        if (IsAdmin(userId))
+        {
+            text.AppendLine("• @имя_бота ai — сгенерировать цитату через ИИ прямо в чате.");
+            text.AppendLine();
+            text.AppendLine("👑 Админские возможности");
+            text.AppendLine();
+            text.AppendLine("Управление базой:");
+            text.AppendLine("/addquote — добавить цитату напрямую, минуя модерацию (текст — следующим сообщением);");
+            text.AppendLine("/editquote <номер> — заменить текст цитаты (номер из /list). Внимание: при изменении текста голоса цитаты обнуляются;");
+            text.AppendLine("/deletequote <номер> — удалить цитату (с подтверждением).");
+            text.AppendLine();
+            text.AppendLine("Модерация предложений:");
+            text.AppendLine("/listsuggest — очередь предложений от пользователей;");
+            text.AppendLine("/approve <номер> — принять предложение (цитата попадёт в базу);");
+            text.AppendLine("/reject <номер> — отклонить предложение.");
+            text.AppendLine();
+            text.AppendLine("Прочее:");
+            text.AppendLine("/publicgen — открыть/закрыть генерацию через ИИ для обычных пользователей (настройка переживает перезапуск);");
+            text.AppendLine("/stats — размер базы, очередь, голоса и топ цитат по лайкам;");
+            text.AppendLine("/export — бот пришлёт JSON-файл базы (бэкап в один клик).");
+            text.AppendLine();
+            text.AppendLine("При добавлении любой цитаты (вручную, через ИИ или одобрением) остальные админы получают уведомление.");
+        }
+
+        text.AppendLine();
+        text.AppendLine("Краткий список команд — /help.");
+
+        await _bot.SendTextMessageAsync(chatId, text.ToString());
     }
 
     private async Task HandleList(long chatId)
