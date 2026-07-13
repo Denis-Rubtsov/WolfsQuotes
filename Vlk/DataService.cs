@@ -20,10 +20,15 @@ class DataService
 
     public void Save()
     {
-        File.WriteAllText(_file,
-            JsonSerializer.Serialize(Data, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            }));
+        var json = JsonSerializer.Serialize(Data, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+
+        // Пишем во временный файл и переименовываем, чтобы падение процесса
+        // посреди записи не обрезало базу.
+        var tmp = _file + ".tmp";
+        File.WriteAllText(tmp, json);
+        File.Move(tmp, _file, overwrite: true);
     }
 }

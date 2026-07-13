@@ -32,9 +32,13 @@ class Program
         var data = new DataService(quotesFile);
         var quotes = new QuoteService(data);
         var ai = new AiQuoteService(aiApiKey, promptFile, data, loggerFactory.CreateLogger<AiQuoteService>());
-        var inline = new InlineHandler(data, ai, adminIds, voice, loggerFactory.CreateLogger<InlineHandler>());
 
-        var service = new BotService(bot, inline, data, quotes, ai, adminIds, voice, loggerFactory.CreateLogger<BotService>());
+        // Лимит ИИ-генераций для обычных пользователей; на админов не действует.
+        var rateLimiter = new RateLimiter(5, TimeSpan.FromHours(1));
+
+        var inline = new InlineHandler(data, ai, adminIds, voice, rateLimiter, loggerFactory.CreateLogger<InlineHandler>());
+
+        var service = new BotService(bot, inline, data, quotes, ai, adminIds, voice, rateLimiter, loggerFactory.CreateLogger<BotService>());
 
         service.Start();
 

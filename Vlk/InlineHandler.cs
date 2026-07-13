@@ -9,15 +9,17 @@ class InlineHandler
     private readonly AiQuoteService _ai;
     private readonly HashSet<long> _adminIds;
     private readonly string _voiceUrl;
+    private readonly RateLimiter _rateLimiter;
     private readonly ILogger<InlineHandler> _logger;
     private readonly Random _random = new();
 
-    public InlineHandler(DataService data, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, ILogger<InlineHandler> logger)
+    public InlineHandler(DataService data, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, RateLimiter rateLimiter, ILogger<InlineHandler> logger)
     {
         _data = data;
         _ai = ai;
         _adminIds = new HashSet<long>(adminIds);
         _voiceUrl = voiceUrl;
+        _rateLimiter = rateLimiter;
         _logger = logger;
     }
 
@@ -145,6 +147,20 @@ class InlineHandler
                 isPersonal: true,
                 null,
                 switchPmText: "Генерация через ИИ доступна только админам",
+                "start"
+            );
+            return;
+        }
+
+        if (!_adminIds.Contains(query.From.Id) && !_rateLimiter.TryAcquire(query.From.Id))
+        {
+            await bot.AnswerInlineQueryAsync(
+                query.Id,
+                Array.Empty<InlineQueryResult>(),
+                cacheTime: 0,
+                isPersonal: true,
+                null,
+                switchPmText: "Лимит генераций исчерпан, попробуйте позже",
                 "start"
             );
             return;

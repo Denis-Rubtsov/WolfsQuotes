@@ -1,7 +1,10 @@
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.ReplyMarkups;
 
 class BotService
@@ -15,12 +18,13 @@ class BotService
     private readonly AiQuoteService _ai;
     private readonly HashSet<long> _adminIds;
     private readonly string _voiceUrl;
+    private readonly RateLimiter _rateLimiter;
     private readonly ILogger<BotService> _logger;
 
     private readonly object _userStateLock = new();
     private readonly Dictionary<long, UserState> _userState = new();
 
-    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, ILogger<BotService> logger)
+    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, RateLimiter rateLimiter, ILogger<BotService> logger)
     {
         _bot = bot;
         _inline = inline;
@@ -29,6 +33,7 @@ class BotService
         _ai = ai;
         _adminIds = new HashSet<long>(adminIds);
         _voiceUrl = voiceUrl;
+        _rateLimiter = rateLimiter;
         _logger = logger;
     }
 
@@ -38,6 +43,7 @@ class BotService
         {
             _bot.SetMyCommandsAsync(new[]
             {
+                new BotCommand { Command = "quote", Description = "Случайная цитата" },
                 new BotCommand { Command = "suggest", Description = "Предложить цитату" },
                 new BotCommand { Command = "list", Description = "Список цитат" },
                 new BotCommand { Command = "help", Description = "Показать помощь" },
@@ -50,6 +56,7 @@ class BotService
 
         var adminCommands = new[]
         {
+            new BotCommand { Command = "quote", Description = "Случайная цитата" },
             new BotCommand { Command = "suggest", Description = "Предложить цитату" },
             new BotCommand { Command = "generate", Description = "Сгенерировать цитату через ИИ" },
             new BotCommand { Command = "addquote", Description = "Добавить цитату" },
@@ -59,6 +66,8 @@ class BotService
             new BotCommand { Command = "approve", Description = "Принять предложение" },
             new BotCommand { Command = "reject", Description = "Отклонить предложение" },
             new BotCommand { Command = "publicgen", Description = "Вкл/выкл генерацию для всех" },
+            new BotCommand { Command = "stats", Description = "Статистика" },
+            new BotCommand { Command = "export", Description = "Экспорт базы цитат" },
             new BotCommand { Command = "list", Description = "Список цитат" },
             new BotCommand { Command = "help", Description = "Показать помощь" },
         };
@@ -138,6 +147,10 @@ class BotService
                 await HandleList(chatId);
                 break;
 
+            case "/quote":
+                await HandleQuote(chatId);
+                break;
+
             case "/suggest":
                 await HandleSuggest(chatId, user.Id);
                 break;
@@ -148,6 +161,14 @@ class BotService
 
             case "/publicgen" when IsAdmin(user.Id):
                 await HandleTogglePublicGeneration(chatId);
+                break;
+
+            case "/stats" when IsAdmin(user.Id):
+                await HandleStats(chatId);
+                break;
+
+            case "/export" when IsAdmin(user.Id):
+                await HandleExport(chatId);
                 break;
 
             case "/addquote" when IsAdmin(user.Id):
@@ -210,7 +231,7 @@ class BotService
         if (IsAdmin(userId))
         {
             await _bot.SendTextMessageAsync(chatId,
-                "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/publicgen - вкл/выкл генерацию для всех\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
+                "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/publicgen - вкл/выкл генерацию для всех\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n/stats - статистика\n/export - экспорт базы цитат\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
             return;
         }
 
@@ -219,7 +240,7 @@ class BotService
             : "";
 
         await _bot.SendTextMessageAsync(chatId,
-            $"Список команд:\n\n/help - список команд\n/start - запуск бота\n/suggest - предложить цитату{generateLine}\n/list - список цитат\n");
+            $"Список команд:\n\n/help - список команд\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату{generateLine}\n/list - список цитат\n");
     }
 
     private async Task HandleList(long chatId)
@@ -241,6 +262,82 @@ class BotService
         await _bot.SendTextMessageAsync(chatId, list);
     }
 
+    private async Task HandleQuote(long chatId)
+    {
+        var quote = _quotes.GetRandomQuote();
+
+        if (quote == null)
+        {
+            await _bot.SendTextMessageAsync(chatId, "Цитат пока нет.");
+            return;
+        }
+
+        var hash = _quotes.HashOf(quote);
+        var (likes, dislikes) = _quotes.GetCounts(hash);
+
+        await _bot.SendTextMessageAsync(chatId, quote,
+            replyMarkup: RatingKeyboard(hash, likes, dislikes));
+    }
+
+    private async Task HandleStats(long chatId)
+    {
+        int quoteCount, suggestionCount;
+        bool publicGen;
+        List<string> quotesSnapshot;
+        Dictionary<string, QuoteRating> ratingsSnapshot;
+
+        lock (_data.Lock)
+        {
+            quoteCount = _data.Data.quotes.Count;
+            suggestionCount = _data.Data.suggestions.Count;
+            publicGen = _data.Data.allow_public_generation;
+            quotesSnapshot = new List<string>(_data.Data.quotes);
+            ratingsSnapshot = new Dictionary<string, QuoteRating>(_data.Data.ratings);
+        }
+
+        var totalLikes = ratingsSnapshot.Values.Sum(r => r.likes.Count);
+        var totalDislikes = ratingsSnapshot.Values.Sum(r => r.dislikes.Count);
+
+        var text = "📊 Статистика:\n\n" +
+                   $"Цитат в базе: {quoteCount}\n" +
+                   $"Предложений в очереди: {suggestionCount}\n" +
+                   $"Генерация для всех: {(publicGen ? "включена" : "выключена")}\n" +
+                   $"Голоса: 👍 {totalLikes} / 👎 {totalDislikes}";
+
+        var top = quotesSnapshot
+            .Select(q => (Quote: q, Likes: ratingsSnapshot.TryGetValue(_quotes.HashOf(q), out var r) ? r.likes.Count : 0))
+            .Where(x => x.Likes > 0)
+            .OrderByDescending(x => x.Likes)
+            .Take(3)
+            .ToList();
+
+        if (top.Count > 0)
+        {
+            text += "\n\nТоп по лайкам:\n" + string.Join("\n",
+                top.Select((x, i) => $"{i + 1}. {x.Quote} — 👍 {x.Likes}"));
+        }
+
+        await _bot.SendTextMessageAsync(chatId, text);
+    }
+
+    private async Task HandleExport(long chatId)
+    {
+        string json;
+        lock (_data.Lock)
+        {
+            json = JsonSerializer.Serialize(_data.Data, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+        }
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+
+        await _bot.SendDocumentAsync(chatId,
+            new InputOnlineFile(stream, "quotes.json"),
+            caption: $"📦 Экспорт базы от {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
+    }
+
     private async Task HandleSuggest(long chatId, long userId)
     {
         SetState(userId, new UserState { Mode = UserMode.Suggest });
@@ -249,6 +346,12 @@ class BotService
 
     private async Task HandleGenerate(long chatId, long userId)
     {
+        if (!IsAdmin(userId) && !_rateLimiter.TryAcquire(userId))
+        {
+            await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже.");
+            return;
+        }
+
         var placeholder = await _bot.SendTextMessageAsync(chatId, "🐺 Генерирую цитату...");
 
         string generated;
@@ -484,6 +587,28 @@ class BotService
         var query = update.CallbackQuery!;
         var user = query.From;
 
+        if (query.Data != null && (query.Data.StartsWith("rate_l_") || query.Data.StartsWith("rate_d_")))
+        {
+            var like = query.Data.StartsWith("rate_l_");
+            var hash = query.Data.Substring("rate_l_".Length);
+
+            var counts = _quotes.Vote(hash, user.Id, like);
+
+            if (counts == null)
+            {
+                await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Этой цитаты больше нет.");
+                return;
+            }
+
+            await _bot.EditMessageReplyMarkupAsync(
+                query.Message!.Chat.Id,
+                query.Message.MessageId,
+                RatingKeyboard(hash, counts.Value.Likes, counts.Value.Dislikes));
+
+            await _bot.AnswerCallbackQueryAsync(query.Id, "Голос учтён");
+            return;
+        }
+
         if (query.Data != null && query.Data.StartsWith("approve_") && IsAdmin(user.Id))
         {
             var id = query.Data.Substring("approve_".Length);
@@ -590,6 +715,12 @@ class BotService
 
         if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id))
         {
+            if (!IsAdmin(user.Id) && !_rateLimiter.TryAcquire(user.Id))
+            {
+                await _bot.AnswerCallbackQueryAsync(query.Id, "⏳ Лимит генераций исчерпан. Попробуйте позже.", showAlert: true);
+                return;
+            }
+
             string regenerated;
             try
             {
@@ -754,6 +885,16 @@ class BotService
             }
         }
     }
+
+    private static InlineKeyboardMarkup RatingKeyboard(string hash, int likes, int dislikes) =>
+        new(new[]
+        {
+            new[]
+            {
+                InlineKeyboardButton.WithCallbackData($"👍 {likes}", $"rate_l_{hash}"),
+                InlineKeyboardButton.WithCallbackData($"👎 {dislikes}", $"rate_d_{hash}")
+            }
+        });
 
     private static string GeneratedQuoteText(string quote, bool forAdd) =>
         $"🐺 Сгенерированная цитата:\n\n{quote}\n\n" +
