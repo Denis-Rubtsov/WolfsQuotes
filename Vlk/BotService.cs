@@ -41,14 +41,7 @@ class BotService
     {
         try
         {
-            _bot.SetMyCommandsAsync(new[]
-            {
-                new BotCommand { Command = "quote", Description = "Случайная цитата" },
-                new BotCommand { Command = "suggest", Description = "Предложить цитату" },
-                new BotCommand { Command = "list", Description = "Список цитат" },
-                new BotCommand { Command = "guide", Description = "Подробный гайд по боту" },
-                new BotCommand { Command = "help", Description = "Показать помощь" },
-            }).GetAwaiter().GetResult();
+            SetDefaultCommandsAsync().GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
@@ -88,6 +81,32 @@ class BotService
         }
 
         _bot.StartReceiving(Update, Error);
+    }
+
+    // Меню команд для обычных пользователей; /generate показывается,
+    // только пока открыта публичная генерация.
+    private async Task SetDefaultCommandsAsync()
+    {
+        bool publicGen;
+        lock (_data.Lock)
+        {
+            publicGen = _data.Data.allow_public_generation;
+        }
+
+        var commands = new List<BotCommand>
+        {
+            new BotCommand { Command = "quote", Description = "Случайная цитата" },
+            new BotCommand { Command = "suggest", Description = "Предложить цитату" },
+        };
+
+        if (publicGen)
+            commands.Add(new BotCommand { Command = "generate", Description = "Сгенерировать цитату через ИИ" });
+
+        commands.Add(new BotCommand { Command = "list", Description = "Список цитат" });
+        commands.Add(new BotCommand { Command = "guide", Description = "Подробный гайд по боту" });
+        commands.Add(new BotCommand { Command = "help", Description = "Показать помощь" });
+
+        await _bot.SetMyCommandsAsync(commands);
     }
 
     private bool IsAdmin(long userId) => _adminIds.Contains(userId);
@@ -471,6 +490,15 @@ class BotService
             _data.Data.allow_public_generation = !_data.Data.allow_public_generation;
             enabled = _data.Data.allow_public_generation;
             _data.Save();
+        }
+
+        try
+        {
+            await SetDefaultCommandsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Не удалось обновить меню команд после переключения публичной генерации");
         }
 
         await _bot.SendTextMessageAsync(chatId,
