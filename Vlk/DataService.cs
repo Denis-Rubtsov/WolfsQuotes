@@ -11,11 +11,41 @@ class DataService
     public DataService(string file)
     {
         _file = file;
+        Data = File.Exists(file)
+            ? JsonSerializer.Deserialize<BotData>(File.ReadAllText(file))!
+            : new BotData();
+    }
 
-        if (File.Exists(file))
-            Data = JsonSerializer.Deserialize<BotData>(File.ReadAllText(file))!;
-        else
-            Data = new BotData();
+    public bool AllowPublicGeneration => Read(d => d.allow_public_generation);
+
+    public void AddPaidGenerations(long userId, int count)
+    {
+        lock (Lock)
+        {
+            Data.paid_generations[userId] = Data.paid_generations.GetValueOrDefault(userId) + count;
+            Save();
+        }
+    }
+
+    public bool TryConsumePaidGeneration(long userId)
+    {
+        lock (Lock)
+        {
+            if (Data.paid_generations.GetValueOrDefault(userId) <= 0)
+                return false;
+
+            Data.paid_generations[userId] -= 1;
+            Save();
+            return true;
+        }
+    }
+
+    // Чтение/снимок данных под общим замком; мутации по-прежнему делаются
+    // вручную под Lock с обязательным Save() до его освобождения.
+    public T Read<T>(Func<BotData, T> read)
+    {
+        lock (Lock)
+            return read(Data);
     }
 
     public void Save()

@@ -5,11 +5,13 @@ using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InputFiles;
+using Telegram.Bot.Types.Payments;
 using Telegram.Bot.Types.ReplyMarkups;
 
 class BotService
 {
     private static readonly TimeSpan StateTtl = TimeSpan.FromMinutes(30);
+    private const string PaymentPayload = "quote_generation";
 
     private readonly ITelegramBotClient _bot;
     private readonly InlineHandler _inline;
@@ -17,14 +19,14 @@ class BotService
     private readonly QuoteService _quotes;
     private readonly AiQuoteService _ai;
     private readonly HashSet<long> _adminIds;
-    private readonly string _voiceUrl;
     private readonly RateLimiter _rateLimiter;
+    private readonly int _starsPrice;
     private readonly ILogger<BotService> _logger;
 
     private readonly object _userStateLock = new();
     private readonly Dictionary<long, UserState> _userState = new();
 
-    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, RateLimiter rateLimiter, ILogger<BotService> logger)
+    public BotService(ITelegramBotClient bot, InlineHandler inline, DataService data, QuoteService quotes, AiQuoteService ai, IEnumerable<long> adminIds, RateLimiter rateLimiter, int starsPrice, ILogger<BotService> logger)
     {
         _bot = bot;
         _inline = inline;
@@ -32,8 +34,8 @@ class BotService
         _quotes = quotes;
         _ai = ai;
         _adminIds = new HashSet<long>(adminIds);
-        _voiceUrl = voiceUrl;
         _rateLimiter = rateLimiter;
+        _starsPrice = starsPrice;
         _logger = logger;
     }
 
@@ -50,21 +52,21 @@ class BotService
 
         var adminCommands = new[]
         {
-            new BotCommand { Command = "quote", Description = "Случайная цитата" },
-            new BotCommand { Command = "suggest", Description = "Предложить цитату" },
-            new BotCommand { Command = "generate", Description = "Сгенерировать цитату через ИИ" },
-            new BotCommand { Command = "addquote", Description = "Добавить цитату" },
-            new BotCommand { Command = "editquote", Description = "Редактировать цитату" },
-            new BotCommand { Command = "deletequote", Description = "Удалить цитату" },
-            new BotCommand { Command = "listsuggest", Description = "Список предложений" },
-            new BotCommand { Command = "approve", Description = "Принять предложение" },
-            new BotCommand { Command = "reject", Description = "Отклонить предложение" },
-            new BotCommand { Command = "publicgen", Description = "Вкл/выкл генерацию для всех" },
-            new BotCommand { Command = "stats", Description = "Статистика" },
-            new BotCommand { Command = "export", Description = "Экспорт базы цитат" },
-            new BotCommand { Command = "list", Description = "Список цитат" },
-            new BotCommand { Command = "guide", Description = "Подробный гайд по боту" },
-            new BotCommand { Command = "help", Description = "Показать помощь" },
+            Cmd("quote", "Случайная цитата"),
+            Cmd("suggest", "Предложить цитату"),
+            Cmd("generate", "Сгенерировать цитату через ИИ"),
+            Cmd("addquote", "Добавить цитату"),
+            Cmd("editquote", "Редактировать цитату"),
+            Cmd("deletequote", "Удалить цитату"),
+            Cmd("listsuggest", "Список предложений"),
+            Cmd("approve", "Принять предложение"),
+            Cmd("reject", "Отклонить предложение"),
+            Cmd("publicgen", "Вкл/выкл генерацию для всех"),
+            Cmd("stats", "Статистика"),
+            Cmd("export", "Экспорт базы цитат"),
+            Cmd("list", "Список цитат"),
+            Cmd("guide", "Подробный гайд по боту"),
+            Cmd("help", "Показать помощь"),
         };
 
         foreach (var adminId in _adminIds)
@@ -83,50 +85,50 @@ class BotService
         _bot.StartReceiving(Update, Error);
     }
 
+    private static BotCommand Cmd(string command, string description) =>
+        new() { Command = command, Description = description };
+
     // Меню команд для обычных пользователей; /generate показывается,
     // только пока открыта публичная генерация.
     private async Task SetDefaultCommandsAsync()
     {
-        bool publicGen;
-        lock (_data.Lock)
-        {
-            publicGen = _data.Data.allow_public_generation;
-        }
-
         var commands = new List<BotCommand>
         {
-            new BotCommand { Command = "quote", Description = "Случайная цитата" },
-            new BotCommand { Command = "suggest", Description = "Предложить цитату" },
+            Cmd("quote", "Случайная цитата"),
+            Cmd("suggest", "Предложить цитату"),
         };
 
-        if (publicGen)
-            commands.Add(new BotCommand { Command = "generate", Description = "Сгенерировать цитату через ИИ" });
+        if (_data.AllowPublicGeneration)
+            commands.Add(Cmd("generate", "Сгенерировать цитату через ИИ"));
 
-        commands.Add(new BotCommand { Command = "list", Description = "Список цитат" });
-        commands.Add(new BotCommand { Command = "guide", Description = "Подробный гайд по боту" });
-        commands.Add(new BotCommand { Command = "help", Description = "Показать помощь" });
+        commands.Add(Cmd("list", "Список цитат"));
+        commands.Add(Cmd("guide", "Подробный гайд по боту"));
+        commands.Add(Cmd("help", "Показать помощь"));
 
         await _bot.SetMyCommandsAsync(commands);
     }
 
     private bool IsAdmin(long userId) => _adminIds.Contains(userId);
 
-    private bool CanGenerate(long userId)
-    {
-        if (IsAdmin(userId))
-            return true;
-
-        lock (_data.Lock)
-        {
-            return _data.Data.allow_public_generation;
-        }
-    }
+    private bool CanGenerate(long userId) => IsAdmin(userId) || _data.AllowPublicGeneration;
 
     private async Task Update(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
         if (update.Type == UpdateType.InlineQuery)
         {
             await _inline.Handle(bot, update.InlineQuery!);
+            return;
+        }
+
+        if (update.PreCheckoutQuery != null)
+        {
+            await HandlePreCheckout(update.PreCheckoutQuery);
+            return;
+        }
+
+        if (update.Message?.SuccessfulPayment != null)
+        {
+            await HandleSuccessfulPayment(update.Message);
             return;
         }
 
@@ -156,73 +158,24 @@ class BotService
 
         switch (command)
         {
-            case "/start":
-                await HandleStart(chatId);
-                break;
-
-            case "/help":
-                await HandleHelp(chatId, user.Id);
-                break;
-
-            case "/guide":
-                await HandleGuide(chatId, user.Id);
-                break;
-
-            case "/list":
-                await HandleList(chatId);
-                break;
-
-            case "/quote":
-                await HandleQuote(chatId);
-                break;
-
-            case "/suggest":
-                await HandleSuggest(chatId, user.Id);
-                break;
-
-            case "/generate" when CanGenerate(user.Id):
-                await HandleGenerate(chatId, user.Id);
-                break;
-
-            case "/publicgen" when IsAdmin(user.Id):
-                await HandleTogglePublicGeneration(chatId);
-                break;
-
-            case "/stats" when IsAdmin(user.Id):
-                await HandleStats(chatId);
-                break;
-
-            case "/export" when IsAdmin(user.Id):
-                await HandleExport(chatId);
-                break;
-
-            case "/addquote" when IsAdmin(user.Id):
-                await HandleAddQuote(chatId, user.Id);
-                break;
-
-            case "/editquote" when IsAdmin(user.Id):
-                await HandleEditQuote(chatId, user.Id, args);
-                break;
-
-            case "/deletequote" when IsAdmin(user.Id):
-                await HandleDeleteQuote(chatId, args);
-                break;
-
-            case "/listsuggest" when IsAdmin(user.Id):
-                await HandleListSuggest(chatId);
-                break;
-
-            case "/reject" when IsAdmin(user.Id):
-                await HandleReject(chatId, args);
-                break;
-
-            case "/approve" when IsAdmin(user.Id):
-                await HandleApprove(chatId, args, user);
-                break;
-
-            default:
-                await HandlePendingInput(chatId, user.Id, text);
-                break;
+            case "/start": await HandleStart(chatId); break;
+            case "/help": await HandleHelp(chatId, user.Id); break;
+            case "/guide": await HandleGuide(chatId, user.Id); break;
+            case "/list": await HandleList(chatId); break;
+            case "/quote": await HandleQuote(chatId); break;
+            case "/suggest": await HandleSuggest(chatId, user.Id); break;
+            case "/paysupport": await HandlePaySupport(chatId); break;
+            case "/generate" when CanGenerate(user.Id): await HandleGenerate(chatId, user.Id); break;
+            case "/publicgen" when IsAdmin(user.Id): await HandleTogglePublicGeneration(chatId); break;
+            case "/stats" when IsAdmin(user.Id): await HandleStats(chatId); break;
+            case "/export" when IsAdmin(user.Id): await HandleExport(chatId); break;
+            case "/addquote" when IsAdmin(user.Id): await HandleAddQuote(chatId, user.Id); break;
+            case "/editquote" when IsAdmin(user.Id): await HandleEditQuote(chatId, user.Id, args); break;
+            case "/deletequote" when IsAdmin(user.Id): await HandleDeleteQuote(chatId, args); break;
+            case "/listsuggest" when IsAdmin(user.Id): await HandleListSuggest(chatId); break;
+            case "/reject" when IsAdmin(user.Id): await HandleReject(chatId, args); break;
+            case "/approve" when IsAdmin(user.Id): await HandleApprove(chatId, args, user); break;
+            default: await HandlePendingInput(chatId, user.Id, text); break;
         }
     }
 
@@ -298,12 +251,14 @@ class BotService
         else if (CanGenerate(userId))
         {
             text.AppendLine("/generate — бот сгенерирует цитату в стиле существующих. Перед отправкой её можно перегенерировать кнопкой; " +
-                            "результат уходит в очередь предложений на модерацию. Лимит — 5 генераций в час.");
+                            "результат уходит в очередь предложений на модерацию. Лимит — 5 генераций в час; " +
+                            "сверх лимита генерацию можно купить за звёзды Telegram (по вопросам оплаты — /paysupport).");
         }
         else
         {
             text.AppendLine("Сейчас генерация доступна только админам. Когда админы откроют её командой /publicgen, " +
-                            "появится команда /generate: результат уходит на модерацию, лимит — 5 генераций в час.");
+                            "появится команда /generate: результат уходит на модерацию, лимит — 5 генераций в час, " +
+                            "сверх лимита — за звёзды Telegram.");
         }
 
         text.AppendLine();
@@ -344,21 +299,16 @@ class BotService
 
     private async Task HandleList(long chatId)
     {
-        List<string> quotesSnapshot;
-        lock (_data.Lock)
-        {
-            quotesSnapshot = new List<string>(_data.Data.quotes);
-        }
+        var quotes = _data.Read(d => d.quotes.ToList());
 
-        if (quotesSnapshot.Count == 0)
+        if (quotes.Count == 0)
         {
             await _bot.SendTextMessageAsync(chatId, "Цитат пока нет.");
             return;
         }
 
-        var list = string.Join("\n",
-            quotesSnapshot.Select((q, i) => $"{i + 1}. {q}"));
-        await _bot.SendTextMessageAsync(chatId, list);
+        await _bot.SendTextMessageAsync(chatId,
+            string.Join("\n", quotes.Select((q, i) => $"{i + 1}. {q}")));
     }
 
     private async Task HandleQuote(long chatId)
@@ -380,31 +330,20 @@ class BotService
 
     private async Task HandleStats(long chatId)
     {
-        int quoteCount, suggestionCount;
-        bool publicGen;
-        List<string> quotesSnapshot;
-        Dictionary<string, QuoteRating> ratingsSnapshot;
+        var (quotes, ratings, suggestionCount, publicGen) = _data.Read(d =>
+            (d.quotes.ToList(), new Dictionary<string, QuoteRating>(d.ratings), d.suggestions.Count, d.allow_public_generation));
 
-        lock (_data.Lock)
-        {
-            quoteCount = _data.Data.quotes.Count;
-            suggestionCount = _data.Data.suggestions.Count;
-            publicGen = _data.Data.allow_public_generation;
-            quotesSnapshot = new List<string>(_data.Data.quotes);
-            ratingsSnapshot = new Dictionary<string, QuoteRating>(_data.Data.ratings);
-        }
-
-        var totalLikes = ratingsSnapshot.Values.Sum(r => r.likes.Count);
-        var totalDislikes = ratingsSnapshot.Values.Sum(r => r.dislikes.Count);
+        var totalLikes = ratings.Values.Sum(r => r.likes.Count);
+        var totalDislikes = ratings.Values.Sum(r => r.dislikes.Count);
 
         var text = "📊 Статистика:\n\n" +
-                   $"Цитат в базе: {quoteCount}\n" +
+                   $"Цитат в базе: {quotes.Count}\n" +
                    $"Предложений в очереди: {suggestionCount}\n" +
                    $"Генерация для всех: {(publicGen ? "включена" : "выключена")}\n" +
                    $"Голоса: 👍 {totalLikes} / 👎 {totalDislikes}";
 
-        var top = quotesSnapshot
-            .Select(q => (Quote: q, Likes: ratingsSnapshot.TryGetValue(_quotes.HashOf(q), out var r) ? r.likes.Count : 0))
+        var top = quotes
+            .Select(q => (Quote: q, Likes: ratings.TryGetValue(_quotes.HashOf(q), out var r) ? r.likes.Count : 0))
             .Where(x => x.Likes > 0)
             .OrderByDescending(x => x.Likes)
             .Take(3)
@@ -421,14 +360,10 @@ class BotService
 
     private async Task HandleExport(long chatId)
     {
-        string json;
-        lock (_data.Lock)
+        var json = _data.Read(d => JsonSerializer.Serialize(d, new JsonSerializerOptions
         {
-            json = JsonSerializer.Serialize(_data.Data, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-        }
+            WriteIndented = true
+        }));
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
@@ -445,24 +380,33 @@ class BotService
 
     private async Task HandleGenerate(long chatId, long userId)
     {
+        // Сверх бесплатного лимита тратится оплаченная звёздами генерация,
+        // а если её нет — пользователю выставляется счёт.
+        var usedPaid = false;
+
         if (!IsAdmin(userId) && !_rateLimiter.TryAcquire(userId))
         {
-            await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже.");
-            return;
+            usedPaid = _data.TryConsumePaidGeneration(userId);
+
+            if (!usedPaid)
+            {
+                await OfferPaidGeneration(chatId);
+                return;
+            }
         }
 
         var placeholder = await _bot.SendTextMessageAsync(chatId, "🐺 Генерирую цитату...");
+        var generated = await GenerateOrNullAsync();
 
-        string generated;
-        try
+        if (generated == null)
         {
-            generated = await _ai.GenerateQuoteAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Ошибка генерации цитаты через ИИ");
+            if (usedPaid)
+                _data.AddPaidGenerations(userId, 1);
+
             await _bot.EditMessageTextAsync(chatId, placeholder.MessageId,
-                "⚠️ Не удалось сгенерировать цитату. Попробуйте позже.");
+                usedPaid
+                    ? "⚠️ Не удалось сгенерировать цитату. Оплаченная генерация не потрачена — попробуйте /generate ещё раз."
+                    : "⚠️ Не удалось сгенерировать цитату. Попробуйте позже.");
             return;
         }
 
@@ -475,11 +419,69 @@ class BotService
             PendingQuote = generated
         });
 
-        await _bot.EditMessageTextAsync(
-            chatId,
-            placeholder.MessageId,
+        await _bot.EditMessageTextAsync(chatId, placeholder.MessageId,
             GeneratedQuoteText(generated, forAdd),
             replyMarkup: GeneratedQuoteKeyboard(forAdd));
+    }
+
+    private async Task OfferPaidGeneration(long chatId)
+    {
+        if (_starsPrice <= 0)
+        {
+            await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже.");
+            return;
+        }
+
+        await _bot.SendInvoiceAsync(
+            chatId,
+            "Генерация цитаты",
+            $"Бесплатный лимит исчерпан. Одна генерация цитаты через ИИ — {_starsPrice} ⭐.",
+            PaymentPayload,
+            providerToken: "", // для Telegram Stars токен провайдера не нужен
+            currency: "XTR",
+            prices: new[] { new LabeledPrice("Генерация цитаты", _starsPrice) });
+    }
+
+    private async Task HandlePreCheckout(PreCheckoutQuery query)
+    {
+        if (query.InvoicePayload == PaymentPayload)
+            await _bot.AnswerPreCheckoutQueryAsync(query.Id);
+        else
+            await _bot.AnswerPreCheckoutQueryAsync(query.Id, "Неизвестный платёж, попробуйте ещё раз.");
+    }
+
+    private async Task HandleSuccessfulPayment(Message message)
+    {
+        var payment = message.SuccessfulPayment!;
+        var userId = message.From!.Id;
+
+        _logger.LogInformation("Оплата {Amount} XTR от {UserId}, charge id {ChargeId}",
+            payment.TotalAmount, userId, payment.TelegramPaymentChargeId);
+
+        // Начисляем генерацию и сразу запускаем её; если генерация не удастся,
+        // оплаченная попытка вернётся и сработает при следующем /generate.
+        _data.AddPaidGenerations(userId, 1);
+        await HandleGenerate(message.Chat.Id, userId);
+    }
+
+    private async Task HandlePaySupport(long chatId)
+    {
+        await _bot.SendTextMessageAsync(chatId,
+            "💫 По вопросам оплаты и возврата звёзд напишите админам бота — контакты в описании. " +
+            "Если оплаченная генерация не сработала, она сохраняется и потратится при следующем /generate.");
+    }
+
+    private async Task<string?> GenerateOrNullAsync()
+    {
+        try
+        {
+            return await _ai.GenerateQuoteAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка генерации цитаты через ИИ");
+            return null;
+        }
     }
 
     private async Task HandleTogglePublicGeneration(long chatId)
@@ -513,6 +515,9 @@ class BotService
         await _bot.SendTextMessageAsync(chatId, "Введите цитату для добавления.");
     }
 
+    private string? GetQuoteAt(int index) =>
+        _data.Read(d => index >= 0 && index < d.quotes.Count ? d.quotes[index] : null);
+
     private async Task HandleEditQuote(long chatId, long userId, string args)
     {
         if (!TryParseIndex(args, out int index))
@@ -522,13 +527,7 @@ class BotService
         }
 
         index -= 1;
-
-        string? current = null;
-        lock (_data.Lock)
-        {
-            if (index >= 0 && index < _data.Data.quotes.Count)
-                current = _data.Data.quotes[index];
-        }
+        var current = GetQuoteAt(index);
 
         if (current == null)
         {
@@ -551,13 +550,7 @@ class BotService
         }
 
         index -= 1;
-
-        string? current = null;
-        lock (_data.Lock)
-        {
-            if (index >= 0 && index < _data.Data.quotes.Count)
-                current = _data.Data.quotes[index];
-        }
+        var current = GetQuoteAt(index);
 
         if (current == null)
         {
@@ -565,40 +558,50 @@ class BotService
             return;
         }
 
-        var deleteKeyboard = new InlineKeyboardMarkup(
-            new[]
-            {
-                new[]
-                {
-                    InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"delquote_{index}"),
-                    InlineKeyboardButton.WithCallbackData("❌ Отменить", "delquote_cancel")
-                }
-            });
-
         await _bot.SendTextMessageAsync(chatId,
             $"Удалить цитату №{index + 1}?\n\n{current}",
-            replyMarkup: deleteKeyboard);
+            replyMarkup: new InlineKeyboardMarkup(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("🗑 Удалить", $"delquote_{index}"),
+                InlineKeyboardButton.WithCallbackData("❌ Отменить", "delquote_cancel")
+            }));
     }
 
     private async Task HandleListSuggest(long chatId)
     {
-        List<Suggestion> suggestionsSnapshot;
-        lock (_data.Lock)
-        {
-            suggestionsSnapshot = new List<Suggestion>(_data.Data.suggestions);
-        }
+        var suggestions = _data.Read(d => d.suggestions.ToList());
 
-        if (!suggestionsSnapshot.Any())
+        if (suggestions.Count == 0)
         {
             await _bot.SendTextMessageAsync(chatId, "Нет предложенных цитат");
             return;
         }
 
-        var textOut = string.Join("\n",
-            suggestionsSnapshot.Select((s, i) =>
-                $"{i + 1}. {s.quote} (от {s.name})"));
+        await _bot.SendTextMessageAsync(chatId, string.Join("\n",
+            suggestions.Select((s, i) => $"{i + 1}. {s.quote} (от {s.name})")));
+    }
 
-        await _bot.SendTextMessageAsync(chatId, textOut);
+    // Забирает предложение из очереди (по индексу или условию поиска);
+    // при approve цитата попадает в базу, если её там ещё нет.
+    private Suggestion? RemoveSuggestion(Func<List<Suggestion>, int> findIndex, bool approve)
+    {
+        lock (_data.Lock)
+        {
+            var list = _data.Data.suggestions;
+            var index = findIndex(list);
+
+            if (index < 0 || index >= list.Count)
+                return null;
+
+            var suggestion = list[index];
+
+            if (approve && !_quotes.Exists(suggestion.quote))
+                _data.Data.quotes.Add(suggestion.quote);
+
+            list.RemoveAt(index);
+            _data.Save();
+            return suggestion;
+        }
     }
 
     private async Task HandleReject(long chatId, string args)
@@ -609,27 +612,10 @@ class BotService
             return;
         }
 
-        index -= 1;
-
-        Suggestion? removed = null;
-        lock (_data.Lock)
-        {
-            if (index >= 0 && index < _data.Data.suggestions.Count)
-            {
-                removed = _data.Data.suggestions[index];
-                _data.Data.suggestions.RemoveAt(index);
-                _data.Save();
-            }
-        }
-
-        if (removed == null)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Неверный номер предложения");
-            return;
-        }
+        var removed = RemoveSuggestion(_ => index - 1, approve: false);
 
         await _bot.SendTextMessageAsync(chatId,
-            $"❌ Отклонено: {removed.quote}");
+            removed != null ? $"❌ Отклонено: {removed.quote}" : "Неверный номер предложения");
     }
 
     private async Task HandleApprove(long chatId, string args, User user)
@@ -640,22 +626,7 @@ class BotService
             return;
         }
 
-        index -= 1;
-
-        Suggestion? suggestion = null;
-        lock (_data.Lock)
-        {
-            if (index >= 0 && index < _data.Data.suggestions.Count)
-            {
-                suggestion = _data.Data.suggestions[index];
-
-                if (!_quotes.Exists(suggestion.quote))
-                    _data.Data.quotes.Add(suggestion.quote);
-
-                _data.Data.suggestions.RemoveAt(index);
-                _data.Save();
-            }
-        }
+        var suggestion = RemoveSuggestion(_ => index - 1, approve: true);
 
         if (suggestion == null)
         {
@@ -663,9 +634,7 @@ class BotService
             return;
         }
 
-        await _bot.SendTextMessageAsync(chatId,
-            $"✅ Добавлено: {suggestion.quote}");
-
+        await _bot.SendTextMessageAsync(chatId, $"✅ Добавлено: {suggestion.quote}");
         await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
     }
 
@@ -674,20 +643,13 @@ class BotService
         if (!TrySetPendingQuote(userId, text))
             return;
 
-        var keyboard = new InlineKeyboardMarkup(
-            new[]
-            {
-                new[]
-                {
-                    InlineKeyboardButton.WithCallbackData("✅ Подтвердить","confirm"),
-                    InlineKeyboardButton.WithCallbackData("❌ Отменить","cancel")
-                }
-            });
-
-        await _bot.SendTextMessageAsync(
-            chatId,
+        await _bot.SendTextMessageAsync(chatId,
             $"Вот что вы ввели:\n\n{text}\n\nПодтвердить?",
-            replyMarkup: keyboard);
+            replyMarkup: new InlineKeyboardMarkup(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("✅ Подтвердить", "confirm"),
+                InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
+            }));
     }
 
     private async Task HandleCallback(Update update)
@@ -720,29 +682,12 @@ class BotService
         if (query.Data != null && query.Data.StartsWith("approve_") && IsAdmin(user.Id))
         {
             var id = query.Data.Substring("approve_".Length);
-            Suggestion? suggestion = null;
-
-            lock (_data.Lock)
-            {
-                var index = _data.Data.suggestions.FindIndex(s => s.id == id);
-
-                if (index >= 0)
-                {
-                    suggestion = _data.Data.suggestions[index];
-
-                    if (!_quotes.Exists(suggestion.quote))
-                        _data.Data.quotes.Add(suggestion.quote);
-
-                    _data.Data.suggestions.RemoveAt(index);
-                    _data.Save();
-                }
-            }
+            var suggestion = RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: true);
 
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                suggestion != null ? "✅ Цитата одобрена и добавлена." : "⚠️ Это предложение уже обработано."
-            );
+                suggestion != null ? "✅ Цитата одобрена и добавлена." : "⚠️ Это предложение уже обработано.");
 
             if (suggestion != null)
                 await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
@@ -753,25 +698,12 @@ class BotService
         if (query.Data != null && query.Data.StartsWith("reject_") && IsAdmin(user.Id))
         {
             var id = query.Data.Substring("reject_".Length);
-            bool removed;
-
-            lock (_data.Lock)
-            {
-                var index = _data.Data.suggestions.FindIndex(s => s.id == id);
-                removed = index >= 0;
-
-                if (removed)
-                {
-                    _data.Data.suggestions.RemoveAt(index);
-                    _data.Save();
-                }
-            }
+            var removed = RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: false);
 
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                removed ? "❌ Цитата отклонена." : "⚠️ Это предложение уже обработано."
-            );
+                removed != null ? "❌ Цитата отклонена." : "⚠️ Это предложение уже обработано.");
 
             return;
         }
@@ -806,8 +738,7 @@ class BotService
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                removedQuote != null ? $"🗑 Удалено: {removedQuote}" : "⚠️ Такой цитаты уже нет."
-            );
+                removedQuote != null ? $"🗑 Удалено: {removedQuote}" : "⚠️ Такой цитаты уже нет.");
 
             return;
         }
@@ -823,20 +754,27 @@ class BotService
 
         if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id))
         {
+            var usedPaid = false;
+
             if (!IsAdmin(user.Id) && !_rateLimiter.TryAcquire(user.Id))
             {
-                await _bot.AnswerCallbackQueryAsync(query.Id, "⏳ Лимит генераций исчерпан. Попробуйте позже.", showAlert: true);
-                return;
+                usedPaid = _data.TryConsumePaidGeneration(user.Id);
+
+                if (!usedPaid)
+                {
+                    await OfferPaidGeneration(query.Message!.Chat.Id);
+                    await _bot.AnswerCallbackQueryAsync(query.Id);
+                    return;
+                }
             }
 
-            string regenerated;
-            try
+            var regenerated = await GenerateOrNullAsync();
+
+            if (regenerated == null)
             {
-                regenerated = await _ai.GenerateQuoteAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Ошибка перегенерации цитаты через ИИ");
+                if (usedPaid)
+                    _data.AddPaidGenerations(user.Id, 1);
+
                 await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Не удалось перегенерировать цитату.", showAlert: true);
                 return;
             }
@@ -872,28 +810,13 @@ class BotService
                     _data.Save();
                 }
 
-                foreach (var adminId in _adminIds)
-                {
-                    try
+                await SendToAdminsAsync(
+                    $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
+                    new InlineKeyboardMarkup(new[]
                     {
-                        await _bot.SendTextMessageAsync(
-                            adminId,
-                            $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
-                            replyMarkup: new InlineKeyboardMarkup(new[]
-                            {
-                                new[]
-                                {
-                                    InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{suggestion.id}"),
-                                    InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
-                                }
-                            })
-                        );
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Не удалось уведомить админа {AdminId} о новом предложении", adminId);
-                    }
-                }
+                        InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{suggestion.id}"),
+                        InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
+                    }));
 
                 try
                 {
@@ -918,48 +841,34 @@ class BotService
                     }
                 }
 
-                if (added)
-                {
-                    await _bot.EditMessageTextAsync(
-                        query.Message!.Chat.Id,
-                        query.Message.MessageId,
-                        "🔥 Цитата добавлена.");
+                await _bot.EditMessageTextAsync(
+                    query.Message!.Chat.Id,
+                    query.Message.MessageId,
+                    added ? "🔥 Цитата добавлена." : "⚠️ Такая цитата уже существует.");
 
+                if (added)
                     await NotifyAdminsQuoteAdded(quote, user.Id, user.Username ?? user.FirstName);
-                }
-                else
-                {
-                    await _bot.EditMessageTextAsync(
-                        query.Message!.Chat.Id,
-                        query.Message.MessageId,
-                        "⚠️ Такая цитата уже существует.");
-                }
             }
 
             if (state.Mode == UserMode.Edit && IsAdmin(user.Id))
             {
-                bool applied = false;
                 var editIndex = state.EditIndex;
+                var applied = false;
 
-                if (editIndex >= 0)
+                lock (_data.Lock)
                 {
-                    lock (_data.Lock)
+                    if (editIndex >= 0 && editIndex < _data.Data.quotes.Count)
                     {
-                        if (editIndex < _data.Data.quotes.Count)
-                        {
-                            _data.Data.quotes[editIndex] = quote;
-                            _data.Save();
-                            applied = true;
-                        }
+                        _data.Data.quotes[editIndex] = quote;
+                        _data.Save();
+                        applied = true;
                     }
                 }
 
                 await _bot.EditMessageTextAsync(
                     query.Message!.Chat.Id,
                     query.Message.MessageId,
-                    applied
-                        ? $"✏️ Цитата №{editIndex + 1} обновлена."
-                        : "⚠️ Цитата больше не существует.");
+                    applied ? $"✏️ Цитата №{editIndex + 1} обновлена." : "⚠️ Цитата больше не существует.");
             }
         }
 
@@ -974,34 +883,32 @@ class BotService
         ClearState(user.Id);
     }
 
-    private async Task NotifyAdminsQuoteAdded(string quote, long actorId, string actorLabel)
+    private async Task SendToAdminsAsync(string text, InlineKeyboardMarkup? keyboard = null, long? excludeId = null)
     {
-        var text = $"🐺 Новая цитата в базе (добавил @{actorLabel}):\n\n{quote}";
-
         foreach (var adminId in _adminIds)
         {
-            if (adminId == actorId)
+            if (adminId == excludeId)
                 continue;
 
             try
             {
-                await _bot.SendTextMessageAsync(adminId, text);
+                await _bot.SendTextMessageAsync(adminId, text, replyMarkup: keyboard);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Не удалось уведомить админа {AdminId} о новой цитате", adminId);
+                _logger.LogWarning(ex, "Не удалось отправить сообщение админу {AdminId}", adminId);
             }
         }
     }
 
+    private Task NotifyAdminsQuoteAdded(string quote, long actorId, string actorLabel) =>
+        SendToAdminsAsync($"🐺 Новая цитата в базе (добавил @{actorLabel}):\n\n{quote}", excludeId: actorId);
+
     private static InlineKeyboardMarkup RatingKeyboard(string hash, int likes, int dislikes) =>
         new(new[]
         {
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData($"👍 {likes}", $"rate_l_{hash}"),
-                InlineKeyboardButton.WithCallbackData($"👎 {dislikes}", $"rate_d_{hash}")
-            }
+            InlineKeyboardButton.WithCallbackData($"👍 {likes}", $"rate_l_{hash}"),
+            InlineKeyboardButton.WithCallbackData($"👎 {dislikes}", $"rate_d_{hash}")
         });
 
     private static string GeneratedQuoteText(string quote, bool forAdd) =>
@@ -1011,12 +918,9 @@ class BotService
     private static InlineKeyboardMarkup GeneratedQuoteKeyboard(bool forAdd) =>
         new(new[]
         {
-            new[]
-            {
-                InlineKeyboardButton.WithCallbackData(forAdd ? "✅ Добавить" : "✅ Предложить", "confirm"),
-                InlineKeyboardButton.WithCallbackData("🔄 Перегенерировать", "regenerate"),
-                InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
-            }
+            InlineKeyboardButton.WithCallbackData(forAdd ? "✅ Добавить" : "✅ Предложить", "confirm"),
+            InlineKeyboardButton.WithCallbackData("🔄 Перегенерировать", "regenerate"),
+            InlineKeyboardButton.WithCallbackData("❌ Отменить", "cancel")
         });
 
     private void SetState(long userId, UserState state)
@@ -1049,14 +953,9 @@ class BotService
     {
         lock (_userStateLock)
         {
-            if (!_userState.TryGetValue(userId, out var state))
+            var state = GetState(userId);
+            if (state == null)
                 return false;
-
-            if (state.IsExpired(StateTtl))
-            {
-                _userState.Remove(userId);
-                return false;
-            }
 
             state.PendingQuote = text;
             return true;

@@ -11,25 +11,13 @@ class QuoteService
         _data = data;
     }
 
-    public string? GetRandomQuote()
-    {
-        lock (_data.Lock)
-        {
-            if (_data.Data.quotes.Count == 0)
-                return null;
-
-            return _data.Data.quotes[_random.Next(_data.Data.quotes.Count)];
-        }
-    }
+    public string? GetRandomQuote() =>
+        _data.Read(d => d.quotes.Count == 0 ? null : d.quotes[_random.Next(d.quotes.Count)]);
 
     public bool Exists(string quote)
     {
         var normalized = quote.Trim().ToLower();
-
-        lock (_data.Lock)
-        {
-            return _data.Data.quotes.Any(q => q.Trim().ToLower() == normalized);
-        }
+        return _data.Read(d => d.quotes.Any(q => q.Trim().ToLower() == normalized));
     }
 
     // Короткий стабильный ключ цитаты для callback-данных (лимит 64 байта) и словаря рейтингов.
@@ -61,13 +49,8 @@ class QuoteService
         }
     }
 
-    public (int Likes, int Dislikes) GetCounts(string hash)
-    {
-        lock (_data.Lock)
-        {
-            return _data.Data.ratings.TryGetValue(hash, out var rating)
-                ? (rating.likes.Count, rating.dislikes.Count)
-                : (0, 0);
-        }
-    }
+    public (int Likes, int Dislikes) GetCounts(string hash) =>
+        _data.Read(d => d.ratings.TryGetValue(hash, out var rating)
+            ? (rating.likes.Count, rating.dislikes.Count)
+            : (0, 0));
 }

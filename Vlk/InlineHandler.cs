@@ -35,85 +35,39 @@ class InlineHandler
                 return;
             }
 
-            List<string> quotesSnapshot;
-            lock (_data.Lock)
-            {
-                quotesSnapshot = new List<string>(_data.Data.quotes);
-            }
+            var quotes = _data.Read(d => d.quotes.ToList());
 
-            var quoteCount = quotesSnapshot.Count;
-
-            if (quoteCount == 0)
+            if (quotes.Count == 0)
             {
-                await bot.AnswerInlineQueryAsync(
-                    query.Id,
-                    Array.Empty<InlineQueryResult>(),
-                    cacheTime: 0,
-                    isPersonal: true,
-                    null,
-                    switchPmText: "Цитат пока нет",
-                    "start"
-                );
+                await AnswerAsync(bot, query, "Цитат пока нет");
                 return;
             }
 
-            string quote;
-            string title = "Вспомнить мудрость";
-            int index;
+            var title = "Вспомнить мудрость";
 
-            if (int.TryParse(input, out index))
+            if (int.TryParse(input, out int index))
             {
                 index -= 1;
 
-                if (index < 0 || index >= quoteCount)
+                if (index < 0 || index >= quotes.Count)
                 {
-                    await bot.AnswerInlineQueryAsync(
-                        query.Id,
-                        Array.Empty<InlineQueryResult>(),
-                        cacheTime: 0,
-                        isPersonal: true,
-                        null,
-                        switchPmText: $"Введите целое число от 1 до {quoteCount}",
-                        "start"
-                    );
+                    await AnswerAsync(bot, query, $"Введите целое число от 1 до {quotes.Count}");
                     return;
                 }
 
-                quote = quotesSnapshot[index];
                 title = $"Мудрость №{index + 1}";
             }
             else
             {
-                index = _random.Next(quoteCount);
-                quote = quotesSnapshot[index];
+                index = _random.Next(quotes.Count);
             }
 
-            var voice = _voiceUrl + $"{index}.ogg";
-
-            var results = new InlineQueryResult[]
-            {
-                new InlineQueryResultArticle(
-                    Guid.NewGuid().ToString() + DateTime.UtcNow.Ticks,
-                    title,
-                    new InputTextMessageContent(quote))
-                {
-                    Description = quote[..Math.Min(80, quote.Length)]
-                },
+            await AnswerAsync(bot, query, $"Введите целое число от 1 до {quotes.Count}",
+                Article(title, quotes[index]),
                 new InlineQueryResultVoice(
                     Guid.NewGuid().ToString(),
-                    voice,
-                    title + " голосом Волка")
-            };
-
-            await bot.AnswerInlineQueryAsync(
-                query.Id,
-                results,
-                cacheTime: 0,
-                isPersonal: true,
-                null,
-                switchPmText: $"Введите целое число от 1 до {quoteCount}",
-                "start"
-            );
+                    _voiceUrl + $"{index}.ogg",
+                    title + " голосом Волка"));
         }
         catch (Telegram.Bot.Exceptions.ApiRequestException ex)
             when (ex.Message.Contains("query is too old"))
@@ -125,45 +79,30 @@ class InlineHandler
         }
     }
 
-    private bool CanGenerate(long userId)
-    {
-        if (_adminIds.Contains(userId))
-            return true;
-
-        lock (_data.Lock)
-        {
-            return _data.Data.allow_public_generation;
-        }
-    }
-
     private async Task HandleAiGeneration(ITelegramBotClient bot, InlineQuery query)
     {
-        if (!CanGenerate(query.From.Id))
+        var userId = query.From.Id;
+        var isAdmin = _adminIds.Contains(userId);
+
+        if (!isAdmin && !_data.AllowPublicGeneration)
         {
-            await bot.AnswerInlineQueryAsync(
-                query.Id,
-                Array.Empty<InlineQueryResult>(),
-                cacheTime: 0,
-                isPersonal: true,
-                null,
-                switchPmText: "Генерация через ИИ доступна только админам",
-                "start"
-            );
+            await AnswerAsync(bot, query, "Генерация через ИИ доступна только админам");
             return;
         }
 
-        if (!_adminIds.Contains(query.From.Id) && !_rateLimiter.TryAcquire(query.From.Id))
+        // Сверх бесплатного лимита тратится оплаченная звёздами генерация;
+        // купить её можно через /generate в личке бота.
+        var usedPaid = false;
+
+        if (!isAdmin && !_rateLimiter.TryAcquire(userId))
         {
-            await bot.AnswerInlineQueryAsync(
-                query.Id,
-                Array.Empty<InlineQueryResult>(),
-                cacheTime: 0,
-                isPersonal: true,
-                null,
-                switchPmText: "Лимит генераций исчерпан, попробуйте позже",
-                "start"
-            );
-            return;
+            usedPaid = _data.TryConsumePaidGeneration(userId);
+
+            if (!usedPaid)
+            {
+                await AnswerAsync(bot, query, "Лимит исчерпан — купить генерацию: /generate в ЛС бота");
+                return;
+            }
         }
 
         string generated;
@@ -173,38 +112,24 @@ class InlineHandler
         }
         catch (Exception ex)
         {
+            if (usedPaid)
+                _data.AddPaidGenerations(userId, 1);
+
             _logger.LogError(ex, "Ошибка генерации цитаты через ИИ в inline-режиме");
-            await bot.AnswerInlineQueryAsync(
-                query.Id,
-                Array.Empty<InlineQueryResult>(),
-                cacheTime: 0,
-                isPersonal: true,
-                null,
-                switchPmText: "Не удалось сгенерировать цитату",
-                "start"
-            );
+            await AnswerAsync(bot, query, "Не удалось сгенерировать цитату");
             return;
         }
 
-        var results = new InlineQueryResult[]
+        await AnswerAsync(bot, query, "Введите \"ai\" ещё раз для новой генерации",
+            Article("🐺 Цитата от ИИ", generated));
+    }
+
+    private static InlineQueryResultArticle Article(string title, string text) =>
+        new(Guid.NewGuid().ToString(), title, new InputTextMessageContent(text))
         {
-            new InlineQueryResultArticle(
-                Guid.NewGuid().ToString(),
-                "🐺 Цитата от ИИ",
-                new InputTextMessageContent(generated))
-            {
-                Description = generated[..Math.Min(80, generated.Length)]
-            }
+            Description = text[..Math.Min(80, text.Length)]
         };
 
-        await bot.AnswerInlineQueryAsync(
-            query.Id,
-            results,
-            cacheTime: 0,
-            isPersonal: true,
-            null,
-            switchPmText: "Введите \"ai\" ещё раз для новой генерации",
-            "start"
-        );
-    }
+    private static Task AnswerAsync(ITelegramBotClient bot, InlineQuery query, string switchPmText, params InlineQueryResult[] results) =>
+        bot.AnswerInlineQueryAsync(query.Id, results, cacheTime: 0, isPersonal: true, null, switchPmText, "start");
 }

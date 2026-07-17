@@ -24,14 +24,7 @@ class AiQuoteService
 
     public async Task<string> GenerateQuoteAsync()
     {
-        List<string> examples;
-        lock (_data.Lock)
-        {
-            examples = _data.Data.quotes
-                .OrderBy(_ => _random.Next())
-                .Take(10)
-                .ToList();
-        }
+        var examples = _data.Read(d => d.quotes.OrderBy(_ => _random.Next()).Take(10).ToList());
 
         var systemPrompt = LoadSystemPrompt();
 
