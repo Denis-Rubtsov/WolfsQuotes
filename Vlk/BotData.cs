@@ -6,4 +6,6 @@ class BotData
     public bool allow_public_generation { get; set; }
     // Оплаченные звёздами генерации сверх бесплатного лимита: user id -> остаток.
     public Dictionary<long, int> paid_generations { get; set; } = new();
+    // Цена одной такой генерации в звёздах; null — используется значение из конфига (StarsPrice).
+    public int? stars_price { get; set; }
 }

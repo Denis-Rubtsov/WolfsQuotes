@@ -20,7 +20,7 @@ class BotService
     private readonly AiQuoteService _ai;
     private readonly HashSet<long> _adminIds;
     private readonly RateLimiter _rateLimiter;
-    private readonly int _starsPrice;
+    private readonly int _defaultStarsPrice;
     private readonly ILogger<BotService> _logger;
 
     private readonly object _userStateLock = new();
@@ -35,9 +35,12 @@ class BotService
         _ai = ai;
         _adminIds = new HashSet<long>(adminIds);
         _rateLimiter = rateLimiter;
-        _starsPrice = starsPrice;
+        _defaultStarsPrice = starsPrice;
         _logger = logger;
     }
+
+    // Текущая цена генерации в звёздах: значение из /setprice, если оно задано, иначе конфиг StarsPrice.
+    private int StarsPrice => _data.StarsPrice(_defaultStarsPrice);
 
     public void Start()
     {
@@ -62,6 +65,7 @@ class BotService
             Cmd("approve", "Принять предложение"),
             Cmd("reject", "Отклонить предложение"),
             Cmd("publicgen", "Вкл/выкл генерацию для всех"),
+            Cmd("setprice", "Изменить цену генерации в звёздах"),
             Cmd("stats", "Статистика"),
             Cmd("export", "Экспорт базы цитат"),
             Cmd("list", "Список цитат"),
@@ -167,6 +171,7 @@ class BotService
             case "/paysupport": await HandlePaySupport(chatId); break;
             case "/generate" when CanGenerate(user.Id): await HandleGenerate(chatId, user.Id); break;
             case "/publicgen" when IsAdmin(user.Id): await HandleTogglePublicGeneration(chatId); break;
+            case "/setprice" when IsAdmin(user.Id): await HandleSetPrice(chatId, args); break;
             case "/stats" when IsAdmin(user.Id): await HandleStats(chatId); break;
             case "/export" when IsAdmin(user.Id): await HandleExport(chatId); break;
             case "/addquote" when IsAdmin(user.Id): await HandleAddQuote(chatId, user.Id); break;
@@ -209,7 +214,7 @@ class BotService
         if (IsAdmin(userId))
         {
             await _bot.SendTextMessageAsync(chatId,
-                "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/publicgen - вкл/выкл генерацию для всех\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n/stats - статистика\n/export - экспорт базы цитат\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
+                "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/publicgen - вкл/выкл генерацию для всех\n/setprice <число> - изменить цену генерации в звёздах\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n/stats - статистика\n/export - экспорт базы цитат\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
             return;
         }
 
@@ -285,6 +290,7 @@ class BotService
             text.AppendLine();
             text.AppendLine("Прочее:");
             text.AppendLine("/publicgen — открыть/закрыть генерацию через ИИ для обычных пользователей (настройка переживает перезапуск);");
+            text.AppendLine($"/setprice <число> — изменить цену генерации сверх лимита в звёздах (сейчас {StarsPrice} ⭐, 0 отключает продажу; настройка переживает перезапуск);");
             text.AppendLine("/stats — размер базы, очередь, голоса и топ цитат по лайкам;");
             text.AppendLine("/export — бот пришлёт JSON-файл базы (бэкап в один клик).");
             text.AppendLine();
@@ -426,7 +432,9 @@ class BotService
 
     private async Task OfferPaidGeneration(long chatId)
     {
-        if (_starsPrice <= 0)
+        var price = StarsPrice;
+
+        if (price <= 0)
         {
             await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже.");
             return;
@@ -435,11 +443,28 @@ class BotService
         await _bot.SendInvoiceAsync(
             chatId,
             "Генерация цитаты",
-            $"Бесплатный лимит исчерпан. Одна генерация цитаты через ИИ — {_starsPrice} ⭐.",
+            $"Бесплатный лимит исчерпан. Одна генерация цитаты через ИИ — {price} ⭐.",
             PaymentPayload,
             providerToken: "", // для Telegram Stars токен провайдера не нужен
             currency: "XTR",
-            prices: new[] { new LabeledPrice("Генерация цитаты", _starsPrice) });
+            prices: new[] { new LabeledPrice("Генерация цитаты", price) });
+    }
+
+    private async Task HandleSetPrice(long chatId, string args)
+    {
+        if (!TryParseIndex(args, out int price) || price < 0)
+        {
+            await _bot.SendTextMessageAsync(chatId,
+                $"Использование: /setprice <число звёзд>\nТекущая цена: {StarsPrice} ⭐ (0 — продажа отключена).");
+            return;
+        }
+
+        _data.SetStarsPrice(price);
+
+        await _bot.SendTextMessageAsync(chatId,
+            price == 0
+                ? "🔒 Продажа генераций за звёзды отключена."
+                : $"💫 Цена генерации сверх лимита установлена: {price} ⭐.");
     }
 
     private async Task HandlePreCheckout(PreCheckoutQuery query)

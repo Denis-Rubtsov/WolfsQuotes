@@ -18,6 +18,17 @@ class DataService
 
     public bool AllowPublicGeneration => Read(d => d.allow_public_generation);
 
+    public int StarsPrice(int fallback) => Read(d => d.stars_price ?? fallback);
+
+    public void SetStarsPrice(int price)
+    {
+        lock (Lock)
+        {
+            Data.stars_price = price;
+            Save();
+        }
+    }
+
     public void AddPaidGenerations(long userId, int count)
     {
         lock (Lock)
