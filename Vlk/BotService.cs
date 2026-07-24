@@ -44,14 +44,8 @@ class BotService
 
     public void Start()
     {
-        try
-        {
-            SetDefaultCommandsAsync().GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Не удалось установить меню команд по умолчанию");
-        }
+        TrySync(() => SetDefaultCommandsAsync().GetAwaiter().GetResult(),
+            "Не удалось установить меню команд по умолчанию");
 
         var adminCommands = new[]
         {
@@ -75,15 +69,9 @@ class BotService
 
         foreach (var adminId in _adminIds)
         {
-            try
-            {
-                _bot.SetMyCommandsAsync(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId })
-                    .GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Не удалось установить меню команд для админа {AdminId}", adminId);
-            }
+            TrySync(() => _bot.SetMyCommandsAsync(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId })
+                    .GetAwaiter().GetResult(),
+                "Не удалось установить меню команд для админа {AdminId}", adminId);
         }
 
         _bot.StartReceiving(Update, Error);
@@ -91,6 +79,32 @@ class BotService
 
     private static BotCommand Cmd(string command, string description) =>
         new() { Command = command, Description = description };
+
+    // Best-effort вызов Telegram API: ошибка логируется, но не прерывает обработку.
+    // Синхронная версия — для мест, где обвязка ещё не асинхронна (Start()).
+    private void TrySync(Action action, string warningMessage, params object?[] args)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, warningMessage, args);
+        }
+    }
+
+    private async Task TryAsync(Func<Task> action, string warningMessage, params object?[] args)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, warningMessage, args);
+        }
+    }
 
     // Меню команд для обычных пользователей; /generate показывается,
     // только пока открыта публичная генерация.
@@ -511,22 +525,10 @@ class BotService
 
     private async Task HandleTogglePublicGeneration(long chatId)
     {
-        bool enabled;
-        lock (_data.Lock)
-        {
-            _data.Data.allow_public_generation = !_data.Data.allow_public_generation;
-            enabled = _data.Data.allow_public_generation;
-            _data.Save();
-        }
+        var enabled = _data.TogglePublicGeneration();
 
-        try
-        {
-            await SetDefaultCommandsAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Не удалось обновить меню команд после переключения публичной генерации");
-        }
+        await TryAsync(SetDefaultCommandsAsync,
+            "Не удалось обновить меню команд после переключения публичной генерации");
 
         await _bot.SendTextMessageAsync(chatId,
             enabled
@@ -606,29 +608,6 @@ class BotService
             suggestions.Select((s, i) => $"{i + 1}. {s.quote} (от {s.name})")));
     }
 
-    // Забирает предложение из очереди (по индексу или условию поиска);
-    // при approve цитата попадает в базу, если её там ещё нет.
-    private Suggestion? RemoveSuggestion(Func<List<Suggestion>, int> findIndex, bool approve)
-    {
-        lock (_data.Lock)
-        {
-            var list = _data.Data.suggestions;
-            var index = findIndex(list);
-
-            if (index < 0 || index >= list.Count)
-                return null;
-
-            var suggestion = list[index];
-
-            if (approve && !_quotes.Exists(suggestion.quote))
-                _data.Data.quotes.Add(suggestion.quote);
-
-            list.RemoveAt(index);
-            _data.Save();
-            return suggestion;
-        }
-    }
-
     private async Task HandleReject(long chatId, string args)
     {
         if (!TryParseIndex(args, out int index))
@@ -637,7 +616,7 @@ class BotService
             return;
         }
 
-        var removed = RemoveSuggestion(_ => index - 1, approve: false);
+        var removed = _data.RemoveSuggestion(_ => index - 1, approve: false, _quotes.Exists);
 
         await _bot.SendTextMessageAsync(chatId,
             removed != null ? $"❌ Отклонено: {removed.quote}" : "Неверный номер предложения");
@@ -651,7 +630,7 @@ class BotService
             return;
         }
 
-        var suggestion = RemoveSuggestion(_ => index - 1, approve: true);
+        var suggestion = _data.RemoveSuggestion(_ => index - 1, approve: true, _quotes.Exists);
 
         if (suggestion == null)
         {
@@ -681,93 +660,108 @@ class BotService
     {
         var query = update.CallbackQuery!;
         var user = query.From;
+        var data = query.Data;
 
-        if (query.Data != null && (query.Data.StartsWith("rate_l_") || query.Data.StartsWith("rate_d_")))
+        if (data != null && (data.StartsWith("rate_l_") || data.StartsWith("rate_d_")))
         {
-            var like = query.Data.StartsWith("rate_l_");
-            var hash = query.Data.Substring("rate_l_".Length);
-
-            var counts = _quotes.Vote(hash, user.Id, like);
-
-            if (counts == null)
-            {
-                await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Этой цитаты больше нет.");
-                return;
-            }
-
-            await _bot.EditMessageReplyMarkupAsync(
-                query.Message!.Chat.Id,
-                query.Message.MessageId,
-                RatingKeyboard(hash, counts.Value.Likes, counts.Value.Dislikes));
-
-            await _bot.AnswerCallbackQueryAsync(query.Id, "Голос учтён");
+            await HandleRatingCallback(query, user, data);
             return;
         }
 
-        if (query.Data != null && query.Data.StartsWith("approve_") && IsAdmin(user.Id))
+        if (data != null && data.StartsWith("approve_") && IsAdmin(user.Id))
         {
-            var id = query.Data.Substring("approve_".Length);
-            var suggestion = RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: true);
+            await HandleApproveCallback(query, user, data);
+            return;
+        }
 
+        if (data != null && data.StartsWith("reject_") && IsAdmin(user.Id))
+        {
+            await HandleRejectCallback(query, data);
+            return;
+        }
+
+        if (data != null && data.StartsWith("delquote_") && IsAdmin(user.Id))
+        {
+            await HandleDeleteQuoteCallback(query, data);
+            return;
+        }
+
+        await HandlePendingStateCallback(query, user);
+    }
+
+    private async Task HandleRatingCallback(CallbackQuery query, User user, string data)
+    {
+        var like = data.StartsWith("rate_l_");
+        var hash = data.Substring("rate_l_".Length);
+
+        var counts = _quotes.Vote(hash, user.Id, like);
+
+        if (counts == null)
+        {
+            await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Этой цитаты больше нет.");
+            return;
+        }
+
+        await _bot.EditMessageReplyMarkupAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            RatingKeyboard(hash, counts.Value.Likes, counts.Value.Dislikes));
+
+        await _bot.AnswerCallbackQueryAsync(query.Id, "Голос учтён");
+    }
+
+    private async Task HandleApproveCallback(CallbackQuery query, User user, string data)
+    {
+        var id = data.Substring("approve_".Length);
+        var suggestion = _data.RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: true, _quotes.Exists);
+
+        await _bot.EditMessageTextAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            suggestion != null ? "✅ Цитата одобрена и добавлена." : "⚠️ Это предложение уже обработано.");
+
+        if (suggestion != null)
+            await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
+    }
+
+    private async Task HandleRejectCallback(CallbackQuery query, string data)
+    {
+        var id = data.Substring("reject_".Length);
+        var removed = _data.RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: false, _quotes.Exists);
+
+        await _bot.EditMessageTextAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            removed != null ? "❌ Цитата отклонена." : "⚠️ Это предложение уже обработано.");
+    }
+
+    private async Task HandleDeleteQuoteCallback(CallbackQuery query, string data)
+    {
+        var rest = data.Substring("delquote_".Length);
+
+        if (rest == "cancel")
+        {
             await _bot.EditMessageTextAsync(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
-                suggestion != null ? "✅ Цитата одобрена и добавлена." : "⚠️ Это предложение уже обработано.");
-
-            if (suggestion != null)
-                await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
-
+                "❌ Удаление отменено.");
             return;
         }
 
-        if (query.Data != null && query.Data.StartsWith("reject_") && IsAdmin(user.Id))
-        {
-            var id = query.Data.Substring("reject_".Length);
-            var removed = RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: false);
+        string? removedQuote = int.TryParse(rest, out int deleteIndex)
+            ? _data.TryRemoveQuoteAt(deleteIndex)
+            : null;
 
-            await _bot.EditMessageTextAsync(
-                query.Message!.Chat.Id,
-                query.Message.MessageId,
-                removed != null ? "❌ Цитата отклонена." : "⚠️ Это предложение уже обработано.");
+        await _bot.EditMessageTextAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            removedQuote != null ? $"🗑 Удалено: {removedQuote}" : "⚠️ Такой цитаты уже нет.");
+    }
 
-            return;
-        }
-
-        if (query.Data != null && query.Data.StartsWith("delquote_") && IsAdmin(user.Id))
-        {
-            var rest = query.Data.Substring("delquote_".Length);
-
-            if (rest == "cancel")
-            {
-                await _bot.EditMessageTextAsync(
-                    query.Message!.Chat.Id,
-                    query.Message.MessageId,
-                    "❌ Удаление отменено.");
-                return;
-            }
-
-            string? removedQuote = null;
-            if (int.TryParse(rest, out int deleteIndex))
-            {
-                lock (_data.Lock)
-                {
-                    if (deleteIndex >= 0 && deleteIndex < _data.Data.quotes.Count)
-                    {
-                        removedQuote = _data.Data.quotes[deleteIndex];
-                        _data.Data.quotes.RemoveAt(deleteIndex);
-                        _data.Save();
-                    }
-                }
-            }
-
-            await _bot.EditMessageTextAsync(
-                query.Message!.Chat.Id,
-                query.Message.MessageId,
-                removedQuote != null ? $"🗑 Удалено: {removedQuote}" : "⚠️ Такой цитаты уже нет.");
-
-            return;
-        }
-
+    // Обрабатывает regenerate/confirm/cancel — колбэки, зависящие от UserState
+    // текущего пользователя (созданного /suggest, /addquote, /editquote или /generate).
+    private async Task HandlePendingStateCallback(CallbackQuery query, User user)
+    {
         var state = GetState(user.Id);
         var quote = state?.PendingQuote;
 
@@ -779,122 +773,20 @@ class BotService
 
         if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id))
         {
-            var usedPaid = false;
-
-            if (!IsAdmin(user.Id) && !_rateLimiter.TryAcquire(user.Id))
-            {
-                usedPaid = _data.TryConsumePaidGeneration(user.Id);
-
-                if (!usedPaid)
-                {
-                    await OfferPaidGeneration(query.Message!.Chat.Id);
-                    await _bot.AnswerCallbackQueryAsync(query.Id);
-                    return;
-                }
-            }
-
-            var regenerated = await GenerateOrNullAsync();
-
-            if (regenerated == null)
-            {
-                if (usedPaid)
-                    _data.AddPaidGenerations(user.Id, 1);
-
-                await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Не удалось перегенерировать цитату.", showAlert: true);
-                return;
-            }
-
-            TrySetPendingQuote(user.Id, regenerated);
-
-            var forAdd = state.Mode == UserMode.Add;
-
-            await _bot.EditMessageTextAsync(
-                query.Message!.Chat.Id,
-                query.Message.MessageId,
-                GeneratedQuoteText(regenerated, forAdd),
-                replyMarkup: GeneratedQuoteKeyboard(forAdd));
-
-            await _bot.AnswerCallbackQueryAsync(query.Id);
+            await HandleRegenerateCallback(query, user, state);
             return;
         }
 
         if (query.Data == "confirm")
         {
             if (state.Mode == UserMode.Suggest)
-            {
-                var suggestion = new Suggestion
-                {
-                    user_id = user.Id,
-                    name = user.Username ?? user.FirstName,
-                    quote = quote
-                };
-
-                lock (_data.Lock)
-                {
-                    _data.Data.suggestions.Add(suggestion);
-                    _data.Save();
-                }
-
-                await SendToAdminsAsync(
-                    $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
-                    new InlineKeyboardMarkup(new[]
-                    {
-                        InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{suggestion.id}"),
-                        InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
-                    }));
-
-                try
-                {
-                    await _bot.DeleteMessageAsync(query.Message!.Chat.Id, query.Message.MessageId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Не удалось удалить сообщение с цитатой");
-                }
-            }
+                await HandleConfirmSuggest(query, user, quote);
 
             if (state.Mode == UserMode.Add && IsAdmin(user.Id))
-            {
-                bool added;
-                lock (_data.Lock)
-                {
-                    added = !_quotes.Exists(quote);
-                    if (added)
-                    {
-                        _data.Data.quotes.Add(quote);
-                        _data.Save();
-                    }
-                }
-
-                await _bot.EditMessageTextAsync(
-                    query.Message!.Chat.Id,
-                    query.Message.MessageId,
-                    added ? "🔥 Цитата добавлена." : "⚠️ Такая цитата уже существует.");
-
-                if (added)
-                    await NotifyAdminsQuoteAdded(quote, user.Id, user.Username ?? user.FirstName);
-            }
+                await HandleConfirmAdd(query, user, quote);
 
             if (state.Mode == UserMode.Edit && IsAdmin(user.Id))
-            {
-                var editIndex = state.EditIndex;
-                var applied = false;
-
-                lock (_data.Lock)
-                {
-                    if (editIndex >= 0 && editIndex < _data.Data.quotes.Count)
-                    {
-                        _data.Data.quotes[editIndex] = quote;
-                        _data.Save();
-                        applied = true;
-                    }
-                }
-
-                await _bot.EditMessageTextAsync(
-                    query.Message!.Chat.Id,
-                    query.Message.MessageId,
-                    applied ? $"✏️ Цитата №{editIndex + 1} обновлена." : "⚠️ Цитата больше не существует.");
-            }
+                await HandleConfirmEdit(query, state.EditIndex, quote);
         }
 
         if (query.Data == "cancel")
@@ -908,6 +800,92 @@ class BotService
         ClearState(user.Id);
     }
 
+    private async Task HandleRegenerateCallback(CallbackQuery query, User user, UserState state)
+    {
+        var usedPaid = false;
+
+        if (!IsAdmin(user.Id) && !_rateLimiter.TryAcquire(user.Id))
+        {
+            usedPaid = _data.TryConsumePaidGeneration(user.Id);
+
+            if (!usedPaid)
+            {
+                await OfferPaidGeneration(query.Message!.Chat.Id);
+                await _bot.AnswerCallbackQueryAsync(query.Id);
+                return;
+            }
+        }
+
+        var regenerated = await GenerateOrNullAsync();
+
+        if (regenerated == null)
+        {
+            if (usedPaid)
+                _data.AddPaidGenerations(user.Id, 1);
+
+            await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Не удалось перегенерировать цитату.", showAlert: true);
+            return;
+        }
+
+        TrySetPendingQuote(user.Id, regenerated);
+
+        var forAdd = state.Mode == UserMode.Add;
+
+        await _bot.EditMessageTextAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            GeneratedQuoteText(regenerated, forAdd),
+            replyMarkup: GeneratedQuoteKeyboard(forAdd));
+
+        await _bot.AnswerCallbackQueryAsync(query.Id);
+    }
+
+    private async Task HandleConfirmSuggest(CallbackQuery query, User user, string quote)
+    {
+        var suggestion = new Suggestion
+        {
+            user_id = user.Id,
+            name = user.Username ?? user.FirstName,
+            quote = quote
+        };
+
+        _data.AddSuggestion(suggestion);
+
+        await SendToAdminsAsync(
+            $"📩 Новое предложение от @{user.Username ?? user.FirstName}:\n\n{quote}",
+            new InlineKeyboardMarkup(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("✅ Одобрить", $"approve_{suggestion.id}"),
+                InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
+            }));
+
+        await TryAsync(() => _bot.DeleteMessageAsync(query.Message!.Chat.Id, query.Message.MessageId),
+            "Не удалось удалить сообщение с цитатой");
+    }
+
+    private async Task HandleConfirmAdd(CallbackQuery query, User user, string quote)
+    {
+        var added = _data.TryAddQuote(quote, _quotes.Exists);
+
+        await _bot.EditMessageTextAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            added ? "🔥 Цитата добавлена." : "⚠️ Такая цитата уже существует.");
+
+        if (added)
+            await NotifyAdminsQuoteAdded(quote, user.Id, user.Username ?? user.FirstName);
+    }
+
+    private async Task HandleConfirmEdit(CallbackQuery query, int editIndex, string quote)
+    {
+        var applied = _data.TryEditQuoteAt(editIndex, quote);
+
+        await _bot.EditMessageTextAsync(
+            query.Message!.Chat.Id,
+            query.Message.MessageId,
+            applied ? $"✏️ Цитата №{editIndex + 1} обновлена." : "⚠️ Цитата больше не существует.");
+    }
+
     private async Task SendToAdminsAsync(string text, InlineKeyboardMarkup? keyboard = null, long? excludeId = null)
     {
         foreach (var adminId in _adminIds)
@@ -915,14 +893,8 @@ class BotService
             if (adminId == excludeId)
                 continue;
 
-            try
-            {
-                await _bot.SendTextMessageAsync(adminId, text, replyMarkup: keyboard);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Не удалось отправить сообщение админу {AdminId}", adminId);
-            }
+            await TryAsync(() => _bot.SendTextMessageAsync(adminId, text, replyMarkup: keyboard),
+                "Не удалось отправить сообщение админу {AdminId}", adminId);
         }
     }
 

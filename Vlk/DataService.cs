@@ -51,6 +51,88 @@ class DataService
         }
     }
 
+    public bool TogglePublicGeneration()
+    {
+        lock (Lock)
+        {
+            Data.allow_public_generation = !Data.allow_public_generation;
+            Save();
+            return Data.allow_public_generation;
+        }
+    }
+
+    public bool TryAddQuote(string quote, Func<string, bool> exists)
+    {
+        lock (Lock)
+        {
+            if (exists(quote))
+                return false;
+
+            Data.quotes.Add(quote);
+            Save();
+            return true;
+        }
+    }
+
+    public bool TryEditQuoteAt(int index, string newText)
+    {
+        lock (Lock)
+        {
+            if (index < 0 || index >= Data.quotes.Count)
+                return false;
+
+            Data.quotes[index] = newText;
+            Save();
+            return true;
+        }
+    }
+
+    public string? TryRemoveQuoteAt(int index)
+    {
+        lock (Lock)
+        {
+            if (index < 0 || index >= Data.quotes.Count)
+                return null;
+
+            var removed = Data.quotes[index];
+            Data.quotes.RemoveAt(index);
+            Save();
+            return removed;
+        }
+    }
+
+    public void AddSuggestion(Suggestion suggestion)
+    {
+        lock (Lock)
+        {
+            Data.suggestions.Add(suggestion);
+            Save();
+        }
+    }
+
+    // Забирает предложение из очереди (по индексу или условию поиска);
+    // при approve цитата попадает в базу, если её там ещё нет.
+    public Suggestion? RemoveSuggestion(Func<List<Suggestion>, int> findIndex, bool approve, Func<string, bool> exists)
+    {
+        lock (Lock)
+        {
+            var list = Data.suggestions;
+            var index = findIndex(list);
+
+            if (index < 0 || index >= list.Count)
+                return null;
+
+            var suggestion = list[index];
+
+            if (approve && !exists(suggestion.quote))
+                Data.quotes.Add(suggestion.quote);
+
+            list.RemoveAt(index);
+            Save();
+            return suggestion;
+        }
+    }
+
     // Чтение/снимок данных под общим замком; мутации по-прежнему делаются
     // вручную под Lock с обязательным Save() до его освобождения.
     public T Read<T>(Func<BotData, T> read)
