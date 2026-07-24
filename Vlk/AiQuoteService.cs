@@ -51,16 +51,14 @@ class AiQuoteService
 
     private string LoadSystemPrompt()
     {
-        if (string.IsNullOrWhiteSpace(_promptFile))
-            return DefaultSystemPrompt;
+        if (string.IsNullOrWhiteSpace(_promptFile)) return DefaultSystemPrompt;
 
         try
         {
             if (File.Exists(_promptFile))
             {
                 var text = File.ReadAllText(_promptFile).Trim();
-                if (text.Length > 0)
-                    return text;
+                if (text.Length > 0) return text;
             }
 
             _logger.LogWarning("Файл системного промпта {PromptFile} не найден или пуст, используется промпт по умолчанию", _promptFile);

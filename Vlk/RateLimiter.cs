@@ -17,8 +17,7 @@ class RateLimiter
         {
             var now = DateTime.UtcNow;
 
-            if (_hits.Count > 500)
-                Sweep(now);
+            if (_hits.Count > 500) Sweep(now);
 
             if (!_hits.TryGetValue(userId, out var hits))
             {
@@ -28,8 +27,7 @@ class RateLimiter
 
             hits.RemoveAll(t => now - t > _window);
 
-            if (hits.Count >= _limit)
-                return false;
+            if (hits.Count >= _limit) return false;
 
             hits.Add(now);
             return true;
