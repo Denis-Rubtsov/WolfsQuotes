@@ -68,11 +68,8 @@ class BotService
         };
 
         foreach (var adminId in _adminIds)
-        {
-            TrySync(() => _bot.SetMyCommandsAsync(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId })
-                    .GetAwaiter().GetResult(),
+            TrySync(() => _bot.SetMyCommandsAsync(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId }).GetAwaiter().GetResult(),
                 "Не удалось установить меню команд для админа {AdminId}", adminId);
-        }
 
         _bot.StartReceiving(Update, Error);
     }
@@ -132,23 +129,9 @@ class BotService
 
     private async Task Update(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
-        if (update.Type == UpdateType.InlineQuery)
-        {
-            await _inline.Handle(bot, update.InlineQuery!);
-            return;
-        }
-
-        if (update.PreCheckoutQuery != null)
-        {
-            await HandlePreCheckout(update.PreCheckoutQuery);
-            return;
-        }
-
-        if (update.Message?.SuccessfulPayment != null)
-        {
-            await HandleSuccessfulPayment(update.Message);
-            return;
-        }
+        if (update.Type == UpdateType.InlineQuery) { await _inline.Handle(bot, update.InlineQuery!); return; }
+        if (update.PreCheckoutQuery != null) { await HandlePreCheckout(update.PreCheckoutQuery); return; }
+        if (update.Message?.SuccessfulPayment != null) { await HandleSuccessfulPayment(update.Message); return; }
 
         if (update.Message?.Text != null)
             await HandleMessage(update);
@@ -166,11 +149,7 @@ class BotService
         if (user == null)
             return;
 
-        if (!text.StartsWith('/'))
-        {
-            await HandlePendingInput(chatId, user.Id, text);
-            return;
-        }
+        if (!text.StartsWith('/')) { await HandlePendingInput(chatId, user.Id, text); return; }
 
         var (command, args) = ParseCommand(text);
 
@@ -321,11 +300,7 @@ class BotService
     {
         var quotes = _data.Read(d => d.quotes.ToList());
 
-        if (quotes.Count == 0)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Цитат пока нет.");
-            return;
-        }
+        if (quotes.Count == 0) { await _bot.SendTextMessageAsync(chatId, "Цитат пока нет."); return; }
 
         await _bot.SendTextMessageAsync(chatId,
             string.Join("\n", quotes.Select((q, i) => $"{i + 1}. {q}")));
@@ -335,11 +310,7 @@ class BotService
     {
         var quote = _quotes.GetRandomQuote();
 
-        if (quote == null)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Цитат пока нет.");
-            return;
-        }
+        if (quote == null) { await _bot.SendTextMessageAsync(chatId, "Цитат пока нет."); return; }
 
         var hash = _quotes.HashOf(quote);
         var (likes, dislikes) = _quotes.GetCounts(hash);
@@ -408,11 +379,7 @@ class BotService
         {
             usedPaid = _data.TryConsumePaidGeneration(userId);
 
-            if (!usedPaid)
-            {
-                await OfferPaidGeneration(chatId);
-                return;
-            }
+            if (!usedPaid) { await OfferPaidGeneration(chatId); return; }
         }
 
         var placeholder = await _bot.SendTextMessageAsync(chatId, "🐺 Генерирую цитату...");
@@ -448,11 +415,7 @@ class BotService
     {
         var price = StarsPrice;
 
-        if (price <= 0)
-        {
-            await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже.");
-            return;
-        }
+        if (price <= 0) { await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже."); return; }
 
         await _bot.SendInvoiceAsync(
             chatId,
@@ -468,8 +431,7 @@ class BotService
     {
         if (!TryParseIndex(args, out int price) || price < 0)
         {
-            await _bot.SendTextMessageAsync(chatId,
-                $"Использование: /setprice <число звёзд>\nТекущая цена: {StarsPrice} ⭐ (0 — продажа отключена).");
+            await _bot.SendTextMessageAsync(chatId, $"Использование: /setprice <число звёзд>\nТекущая цена: {StarsPrice} ⭐ (0 — продажа отключена).");
             return;
         }
 
@@ -547,20 +509,12 @@ class BotService
 
     private async Task HandleEditQuote(long chatId, long userId, string args)
     {
-        if (!TryParseIndex(args, out int index))
-        {
-            await _bot.SendTextMessageAsync(chatId, "Использование: /editquote <номер>");
-            return;
-        }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /editquote <номер>"); return; }
 
         index -= 1;
         var current = GetQuoteAt(index);
 
-        if (current == null)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты");
-            return;
-        }
+        if (current == null) { await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты"); return; }
 
         SetState(userId, new UserState { Mode = UserMode.Edit, EditIndex = index });
 
@@ -570,20 +524,12 @@ class BotService
 
     private async Task HandleDeleteQuote(long chatId, string args)
     {
-        if (!TryParseIndex(args, out int index))
-        {
-            await _bot.SendTextMessageAsync(chatId, "Использование: /deletequote <номер>");
-            return;
-        }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /deletequote <номер>"); return; }
 
         index -= 1;
         var current = GetQuoteAt(index);
 
-        if (current == null)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты");
-            return;
-        }
+        if (current == null) { await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты"); return; }
 
         await _bot.SendTextMessageAsync(chatId,
             $"Удалить цитату №{index + 1}?\n\n{current}",
@@ -598,11 +544,7 @@ class BotService
     {
         var suggestions = _data.Read(d => d.suggestions.ToList());
 
-        if (suggestions.Count == 0)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Нет предложенных цитат");
-            return;
-        }
+        if (suggestions.Count == 0) { await _bot.SendTextMessageAsync(chatId, "Нет предложенных цитат"); return; }
 
         await _bot.SendTextMessageAsync(chatId, string.Join("\n",
             suggestions.Select((s, i) => $"{i + 1}. {s.quote} (от {s.name})")));
@@ -610,11 +552,7 @@ class BotService
 
     private async Task HandleReject(long chatId, string args)
     {
-        if (!TryParseIndex(args, out int index))
-        {
-            await _bot.SendTextMessageAsync(chatId, "Использование: /reject <номер>");
-            return;
-        }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /reject <номер>"); return; }
 
         var removed = _data.RemoveSuggestion(_ => index - 1, approve: false, _quotes.Exists);
 
@@ -624,19 +562,11 @@ class BotService
 
     private async Task HandleApprove(long chatId, string args, User user)
     {
-        if (!TryParseIndex(args, out int index))
-        {
-            await _bot.SendTextMessageAsync(chatId, "Использование: /approve <номер>");
-            return;
-        }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /approve <номер>"); return; }
 
         var suggestion = _data.RemoveSuggestion(_ => index - 1, approve: true, _quotes.Exists);
 
-        if (suggestion == null)
-        {
-            await _bot.SendTextMessageAsync(chatId, "Неверный номер предложения");
-            return;
-        }
+        if (suggestion == null) { await _bot.SendTextMessageAsync(chatId, "Неверный номер предложения"); return; }
 
         await _bot.SendTextMessageAsync(chatId, $"✅ Добавлено: {suggestion.quote}");
         await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
@@ -662,29 +592,10 @@ class BotService
         var user = query.From;
         var data = query.Data;
 
-        if (data != null && (data.StartsWith("rate_l_") || data.StartsWith("rate_d_")))
-        {
-            await HandleRatingCallback(query, user, data);
-            return;
-        }
-
-        if (data != null && data.StartsWith("approve_") && IsAdmin(user.Id))
-        {
-            await HandleApproveCallback(query, user, data);
-            return;
-        }
-
-        if (data != null && data.StartsWith("reject_") && IsAdmin(user.Id))
-        {
-            await HandleRejectCallback(query, data);
-            return;
-        }
-
-        if (data != null && data.StartsWith("delquote_") && IsAdmin(user.Id))
-        {
-            await HandleDeleteQuoteCallback(query, data);
-            return;
-        }
+        if (data != null && (data.StartsWith("rate_l_") || data.StartsWith("rate_d_"))) { await HandleRatingCallback(query, user, data); return; }
+        if (data != null && data.StartsWith("approve_") && IsAdmin(user.Id)) { await HandleApproveCallback(query, user, data); return; }
+        if (data != null && data.StartsWith("reject_") && IsAdmin(user.Id)) { await HandleRejectCallback(query, data); return; }
+        if (data != null && data.StartsWith("delquote_") && IsAdmin(user.Id)) { await HandleDeleteQuoteCallback(query, data); return; }
 
         await HandlePendingStateCallback(query, user);
     }
@@ -696,11 +607,7 @@ class BotService
 
         var counts = _quotes.Vote(hash, user.Id, like);
 
-        if (counts == null)
-        {
-            await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Этой цитаты больше нет.");
-            return;
-        }
+        if (counts == null) { await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Этой цитаты больше нет."); return; }
 
         await _bot.EditMessageReplyMarkupAsync(
             query.Message!.Chat.Id,
@@ -739,14 +646,7 @@ class BotService
     {
         var rest = data.Substring("delquote_".Length);
 
-        if (rest == "cancel")
-        {
-            await _bot.EditMessageTextAsync(
-                query.Message!.Chat.Id,
-                query.Message.MessageId,
-                "❌ Удаление отменено.");
-            return;
-        }
+        if (rest == "cancel") { await _bot.EditMessageTextAsync(query.Message!.Chat.Id, query.Message.MessageId, "❌ Удаление отменено."); return; }
 
         string? removedQuote = int.TryParse(rest, out int deleteIndex)
             ? _data.TryRemoveQuoteAt(deleteIndex)
@@ -765,17 +665,9 @@ class BotService
         var state = GetState(user.Id);
         var quote = state?.PendingQuote;
 
-        if (state == null || quote == null)
-        {
-            await _bot.AnswerCallbackQueryAsync(query.Id);
-            return;
-        }
+        if (state == null || quote == null) { await _bot.AnswerCallbackQueryAsync(query.Id); return; }
 
-        if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id))
-        {
-            await HandleRegenerateCallback(query, user, state);
-            return;
-        }
+        if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id)) { await HandleRegenerateCallback(query, user, state); return; }
 
         if (query.Data == "confirm")
         {
@@ -808,12 +700,7 @@ class BotService
         {
             usedPaid = _data.TryConsumePaidGeneration(user.Id);
 
-            if (!usedPaid)
-            {
-                await OfferPaidGeneration(query.Message!.Chat.Id);
-                await _bot.AnswerCallbackQueryAsync(query.Id);
-                return;
-            }
+            if (!usedPaid) { await OfferPaidGeneration(query.Message!.Chat.Id); await _bot.AnswerCallbackQueryAsync(query.Id); return; }
         }
 
         var regenerated = await GenerateOrNullAsync();
@@ -936,11 +823,7 @@ class BotService
             if (!_userState.TryGetValue(userId, out var state))
                 return null;
 
-            if (state.IsExpired(StateTtl))
-            {
-                _userState.Remove(userId);
-                return null;
-            }
+            if (state.IsExpired(StateTtl)) { _userState.Remove(userId); return null; }
 
             return state;
         }

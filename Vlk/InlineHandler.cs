@@ -29,19 +29,11 @@ class InlineHandler
         {
             var input = query.Query.Trim();
 
-            if (input.Equals("ai", StringComparison.OrdinalIgnoreCase))
-            {
-                await HandleAiGeneration(bot, query);
-                return;
-            }
+            if (input.Equals("ai", StringComparison.OrdinalIgnoreCase)) { await HandleAiGeneration(bot, query); return; }
 
             var quotes = _data.Read(d => d.quotes.ToList());
 
-            if (quotes.Count == 0)
-            {
-                await AnswerAsync(bot, query, "Цитат пока нет");
-                return;
-            }
+            if (quotes.Count == 0) { await AnswerAsync(bot, query, "Цитат пока нет"); return; }
 
             var title = "Вспомнить мудрость";
 
@@ -49,11 +41,7 @@ class InlineHandler
             {
                 index -= 1;
 
-                if (index < 0 || index >= quotes.Count)
-                {
-                    await AnswerAsync(bot, query, $"Введите целое число от 1 до {quotes.Count}");
-                    return;
-                }
+                if (index < 0 || index >= quotes.Count) { await AnswerAsync(bot, query, $"Введите целое число от 1 до {quotes.Count}"); return; }
 
                 title = $"Мудрость №{index + 1}";
             }
@@ -84,11 +72,7 @@ class InlineHandler
         var userId = query.From.Id;
         var isAdmin = _adminIds.Contains(userId);
 
-        if (!isAdmin && !_data.AllowPublicGeneration)
-        {
-            await AnswerAsync(bot, query, "Генерация через ИИ доступна только админам");
-            return;
-        }
+        if (!isAdmin && !_data.AllowPublicGeneration) { await AnswerAsync(bot, query, "Генерация через ИИ доступна только админам"); return; }
 
         // Сверх бесплатного лимита тратится оплаченная звёздами генерация;
         // купить её можно через /generate в личке бота.
@@ -98,11 +82,7 @@ class InlineHandler
         {
             usedPaid = _data.TryConsumePaidGeneration(userId);
 
-            if (!usedPaid)
-            {
-                await AnswerAsync(bot, query, "Лимит исчерпан — купить генерацию: /generate в ЛС бота");
-                return;
-            }
+            if (!usedPaid) { await AnswerAsync(bot, query, "Лимит исчерпан — купить генерацию: /generate в ЛС бота"); return; }
         }
 
         string generated;

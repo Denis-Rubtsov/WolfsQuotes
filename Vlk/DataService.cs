@@ -42,8 +42,7 @@ class DataService
     {
         lock (Lock)
         {
-            if (Data.paid_generations.GetValueOrDefault(userId) <= 0)
-                return false;
+            if (Data.paid_generations.GetValueOrDefault(userId) <= 0) return false;
 
             Data.paid_generations[userId] -= 1;
             Save();
@@ -65,8 +64,7 @@ class DataService
     {
         lock (Lock)
         {
-            if (exists(quote))
-                return false;
+            if (exists(quote)) return false;
 
             Data.quotes.Add(quote);
             Save();
@@ -78,8 +76,7 @@ class DataService
     {
         lock (Lock)
         {
-            if (index < 0 || index >= Data.quotes.Count)
-                return false;
+            if (index < 0 || index >= Data.quotes.Count) return false;
 
             Data.quotes[index] = newText;
             Save();
@@ -91,8 +88,7 @@ class DataService
     {
         lock (Lock)
         {
-            if (index < 0 || index >= Data.quotes.Count)
-                return null;
+            if (index < 0 || index >= Data.quotes.Count) return null;
 
             var removed = Data.quotes[index];
             Data.quotes.RemoveAt(index);
@@ -119,13 +115,11 @@ class DataService
             var list = Data.suggestions;
             var index = findIndex(list);
 
-            if (index < 0 || index >= list.Count)
-                return null;
+            if (index < 0 || index >= list.Count) return null;
 
             var suggestion = list[index];
 
-            if (approve && !exists(suggestion.quote))
-                Data.quotes.Add(suggestion.quote);
+            if (approve && !exists(suggestion.quote)) Data.quotes.Add(suggestion.quote);
 
             list.RemoveAt(index);
             Save();

@@ -28,21 +28,16 @@ class QuoteService
     {
         lock (_data.Lock)
         {
-            if (!_data.Data.quotes.Any(q => HashOf(q) == hash))
-                return null;
+            if (!_data.Data.quotes.Any(q => HashOf(q) == hash)) return null;
 
             if (!_data.Data.ratings.TryGetValue(hash, out var rating))
-            {
-                rating = new QuoteRating();
-                _data.Data.ratings[hash] = rating;
-            }
+                _data.Data.ratings[hash] = rating = new QuoteRating();
 
             var target = like ? rating.likes : rating.dislikes;
             var opposite = like ? rating.dislikes : rating.likes;
 
             opposite.Remove(userId);
-            if (!target.Remove(userId))
-                target.Add(userId);
+            if (!target.Remove(userId)) target.Add(userId);
 
             _data.Save();
             return (rating.likes.Count, rating.dislikes.Count);
