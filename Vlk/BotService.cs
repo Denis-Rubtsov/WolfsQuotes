@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.Payments;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -68,7 +67,7 @@ class BotService
         };
 
         foreach (var adminId in _adminIds)
-            TrySync(() => _bot.SetMyCommandsAsync(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId }).GetAwaiter().GetResult(),
+            TrySync(() => _bot.SetMyCommands(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId }).GetAwaiter().GetResult(),
                 "Не удалось установить меню команд для админа {AdminId}", adminId);
 
         _bot.StartReceiving(Update, Error);
@@ -120,7 +119,7 @@ class BotService
         commands.Add(Cmd("guide", "Подробный гайд по боту"));
         commands.Add(Cmd("help", "Показать помощь"));
 
-        await _bot.SetMyCommandsAsync(commands);
+        await _bot.SetMyCommands(commands);
     }
 
     private bool IsAdmin(long userId) => _adminIds.Contains(userId);
@@ -198,7 +197,7 @@ class BotService
 
     private async Task HandleStart(long chatId)
     {
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             "Добро пожаловать в бот \"Вълчьи цитаты\".\n\n/help - список команд\n/start - запуск бота\n/suggest — предложить цитату\n/list — список цитат");
     }
 
@@ -206,7 +205,7 @@ class BotService
     {
         if (IsAdmin(userId))
         {
-            await _bot.SendTextMessageAsync(chatId,
+            await _bot.SendMessage(chatId,
                 "Общие команды:\n\n/help - список команд\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату\n/list - список цитат\nАдминские команды:\n\n/addquote - добавить цитату\n/editquote <номер> - редактировать цитату\n/deletequote <номер> - удалить цитату\n/generate - сгенерировать цитату через ИИ\n/publicgen - вкл/выкл генерацию для всех\n/setprice <число> - изменить цену генерации в звёздах\n/listsuggest - список предложений\n/approve - принять предложение\n/reject - отклонить предложение\n/stats - статистика\n/export - экспорт базы цитат\n\nВ inline-режиме (@botname ai) можно сгенерировать цитату через ИИ прямо в любом чате.");
             return;
         }
@@ -215,7 +214,7 @@ class BotService
             ? "\n/generate - сгенерировать цитату через ИИ (уйдёт на модерацию)"
             : "";
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             $"Список команд:\n\n/help - список команд\n/guide - подробный гайд по боту\n/start - запуск бота\n/quote - случайная цитата\n/suggest - предложить цитату{generateLine}\n/list - список цитат\n");
     }
 
@@ -293,16 +292,16 @@ class BotService
         text.AppendLine();
         text.AppendLine("Краткий список команд — /help.");
 
-        await _bot.SendTextMessageAsync(chatId, text.ToString());
+        await _bot.SendMessage(chatId, text.ToString());
     }
 
     private async Task HandleList(long chatId)
     {
         var quotes = _data.Read(d => d.quotes.ToList());
 
-        if (quotes.Count == 0) { await _bot.SendTextMessageAsync(chatId, "Цитат пока нет."); return; }
+        if (quotes.Count == 0) { await _bot.SendMessage(chatId, "Цитат пока нет."); return; }
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             string.Join("\n", quotes.Select((q, i) => $"{i + 1}. {q}")));
     }
 
@@ -310,12 +309,12 @@ class BotService
     {
         var quote = _quotes.GetRandomQuote();
 
-        if (quote == null) { await _bot.SendTextMessageAsync(chatId, "Цитат пока нет."); return; }
+        if (quote == null) { await _bot.SendMessage(chatId, "Цитат пока нет."); return; }
 
         var hash = _quotes.HashOf(quote);
         var (likes, dislikes) = _quotes.GetCounts(hash);
 
-        await _bot.SendTextMessageAsync(chatId, quote,
+        await _bot.SendMessage(chatId, quote,
             replyMarkup: RatingKeyboard(hash, likes, dislikes));
     }
 
@@ -346,7 +345,7 @@ class BotService
                 top.Select((x, i) => $"{i + 1}. {x.Quote} — 👍 {x.Likes}"));
         }
 
-        await _bot.SendTextMessageAsync(chatId, text);
+        await _bot.SendMessage(chatId, text);
     }
 
     private async Task HandleExport(long chatId)
@@ -358,15 +357,15 @@ class BotService
 
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
-        await _bot.SendDocumentAsync(chatId,
-            new InputOnlineFile(stream, "quotes.json"),
+        await _bot.SendDocument(chatId,
+            InputFile.FromStream(stream, "quotes.json"),
             caption: $"📦 Экспорт базы от {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC");
     }
 
     private async Task HandleSuggest(long chatId, long userId)
     {
         SetState(userId, new UserState { Mode = UserMode.Suggest });
-        await _bot.SendTextMessageAsync(chatId, "✍️ Введите цитату для предложения.");
+        await _bot.SendMessage(chatId, "✍️ Введите цитату для предложения.");
     }
 
     private async Task HandleGenerate(long chatId, long userId)
@@ -382,7 +381,7 @@ class BotService
             if (!usedPaid) { await OfferPaidGeneration(chatId); return; }
         }
 
-        var placeholder = await _bot.SendTextMessageAsync(chatId, "🐺 Генерирую цитату...");
+        var placeholder = await _bot.SendMessage(chatId, "🐺 Генерирую цитату...");
         var generated = await GenerateOrNullAsync();
 
         if (generated == null)
@@ -390,7 +389,7 @@ class BotService
             if (usedPaid)
                 _data.AddPaidGenerations(userId, 1);
 
-            await _bot.EditMessageTextAsync(chatId, placeholder.MessageId,
+            await _bot.EditMessageText(chatId, placeholder.MessageId,
                 usedPaid
                     ? "⚠️ Не удалось сгенерировать цитату. Оплаченная генерация не потрачена — попробуйте /generate ещё раз."
                     : "⚠️ Не удалось сгенерировать цитату. Попробуйте позже.");
@@ -406,7 +405,7 @@ class BotService
             PendingQuote = generated
         });
 
-        await _bot.EditMessageTextAsync(chatId, placeholder.MessageId,
+        await _bot.EditMessageText(chatId, placeholder.MessageId,
             GeneratedQuoteText(generated, forAdd),
             replyMarkup: GeneratedQuoteKeyboard(forAdd));
     }
@@ -415,9 +414,9 @@ class BotService
     {
         var price = StarsPrice;
 
-        if (price <= 0) { await _bot.SendTextMessageAsync(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже."); return; }
+        if (price <= 0) { await _bot.SendMessage(chatId, "⏳ Лимит генераций исчерпан. Попробуйте позже."); return; }
 
-        await _bot.SendInvoiceAsync(
+        await _bot.SendInvoice(
             chatId,
             "Генерация цитаты",
             $"Бесплатный лимит исчерпан. Одна генерация цитаты через ИИ — {price} ⭐.",
@@ -431,13 +430,13 @@ class BotService
     {
         if (!TryParseIndex(args, out int price) || price < 0)
         {
-            await _bot.SendTextMessageAsync(chatId, $"Использование: /setprice <число звёзд>\nТекущая цена: {StarsPrice} ⭐ (0 — продажа отключена).");
+            await _bot.SendMessage(chatId, $"Использование: /setprice <число звёзд>\nТекущая цена: {StarsPrice} ⭐ (0 — продажа отключена).");
             return;
         }
 
         _data.SetStarsPrice(price);
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             price == 0
                 ? "🔒 Продажа генераций за звёзды отключена."
                 : $"💫 Цена генерации сверх лимита установлена: {price} ⭐.");
@@ -446,9 +445,9 @@ class BotService
     private async Task HandlePreCheckout(PreCheckoutQuery query)
     {
         if (query.InvoicePayload == PaymentPayload)
-            await _bot.AnswerPreCheckoutQueryAsync(query.Id);
+            await _bot.AnswerPreCheckoutQuery(query.Id);
         else
-            await _bot.AnswerPreCheckoutQueryAsync(query.Id, "Неизвестный платёж, попробуйте ещё раз.");
+            await _bot.AnswerPreCheckoutQuery(query.Id, "Неизвестный платёж, попробуйте ещё раз.");
     }
 
     private async Task HandleSuccessfulPayment(Message message)
@@ -467,7 +466,7 @@ class BotService
 
     private async Task HandlePaySupport(long chatId)
     {
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             "💫 По вопросам оплаты и возврата звёзд напишите админам бота — контакты в описании. " +
             "Если оплаченная генерация не сработала, она сохраняется и потратится при следующем /generate.");
     }
@@ -492,7 +491,7 @@ class BotService
         await TryAsync(SetDefaultCommandsAsync,
             "Не удалось обновить меню команд после переключения публичной генерации");
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             enabled
                 ? "🌍 Генерация цитат через ИИ теперь доступна всем. Цитаты обычных пользователей идут в очередь предложений."
                 : "🔒 Генерация цитат через ИИ снова доступна только админам.");
@@ -501,7 +500,7 @@ class BotService
     private async Task HandleAddQuote(long chatId, long userId)
     {
         SetState(userId, new UserState { Mode = UserMode.Add });
-        await _bot.SendTextMessageAsync(chatId, "Введите цитату для добавления.");
+        await _bot.SendMessage(chatId, "Введите цитату для добавления.");
     }
 
     private string? GetQuoteAt(int index) =>
@@ -509,29 +508,29 @@ class BotService
 
     private async Task HandleEditQuote(long chatId, long userId, string args)
     {
-        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /editquote <номер>"); return; }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendMessage(chatId, "Использование: /editquote <номер>"); return; }
 
         index -= 1;
         var current = GetQuoteAt(index);
 
-        if (current == null) { await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты"); return; }
+        if (current == null) { await _bot.SendMessage(chatId, "Неверный номер цитаты"); return; }
 
         SetState(userId, new UserState { Mode = UserMode.Edit, EditIndex = index });
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             $"✏️ Текущая цитата №{index + 1}:\n\n{current}\n\nВведите новый текст.");
     }
 
     private async Task HandleDeleteQuote(long chatId, string args)
     {
-        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /deletequote <номер>"); return; }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendMessage(chatId, "Использование: /deletequote <номер>"); return; }
 
         index -= 1;
         var current = GetQuoteAt(index);
 
-        if (current == null) { await _bot.SendTextMessageAsync(chatId, "Неверный номер цитаты"); return; }
+        if (current == null) { await _bot.SendMessage(chatId, "Неверный номер цитаты"); return; }
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             $"Удалить цитату №{index + 1}?\n\n{current}",
             replyMarkup: new InlineKeyboardMarkup(new[]
             {
@@ -544,31 +543,31 @@ class BotService
     {
         var suggestions = _data.Read(d => d.suggestions.ToList());
 
-        if (suggestions.Count == 0) { await _bot.SendTextMessageAsync(chatId, "Нет предложенных цитат"); return; }
+        if (suggestions.Count == 0) { await _bot.SendMessage(chatId, "Нет предложенных цитат"); return; }
 
-        await _bot.SendTextMessageAsync(chatId, string.Join("\n",
+        await _bot.SendMessage(chatId, string.Join("\n",
             suggestions.Select((s, i) => $"{i + 1}. {s.quote} (от {s.name})")));
     }
 
     private async Task HandleReject(long chatId, string args)
     {
-        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /reject <номер>"); return; }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendMessage(chatId, "Использование: /reject <номер>"); return; }
 
         var removed = _data.RemoveSuggestion(_ => index - 1, approve: false, _quotes.Exists);
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             removed != null ? $"❌ Отклонено: {removed.quote}" : "Неверный номер предложения");
     }
 
     private async Task HandleApprove(long chatId, string args, User user)
     {
-        if (!TryParseIndex(args, out int index)) { await _bot.SendTextMessageAsync(chatId, "Использование: /approve <номер>"); return; }
+        if (!TryParseIndex(args, out int index)) { await _bot.SendMessage(chatId, "Использование: /approve <номер>"); return; }
 
         var suggestion = _data.RemoveSuggestion(_ => index - 1, approve: true, _quotes.Exists);
 
-        if (suggestion == null) { await _bot.SendTextMessageAsync(chatId, "Неверный номер предложения"); return; }
+        if (suggestion == null) { await _bot.SendMessage(chatId, "Неверный номер предложения"); return; }
 
-        await _bot.SendTextMessageAsync(chatId, $"✅ Добавлено: {suggestion.quote}");
+        await _bot.SendMessage(chatId, $"✅ Добавлено: {suggestion.quote}");
         await NotifyAdminsQuoteAdded(suggestion.quote, user.Id, user.Username ?? user.FirstName);
     }
 
@@ -577,7 +576,7 @@ class BotService
         if (!TrySetPendingQuote(userId, text))
             return;
 
-        await _bot.SendTextMessageAsync(chatId,
+        await _bot.SendMessage(chatId,
             $"Вот что вы ввели:\n\n{text}\n\nПодтвердить?",
             replyMarkup: new InlineKeyboardMarkup(new[]
             {
@@ -607,14 +606,14 @@ class BotService
 
         var counts = _quotes.Vote(hash, user.Id, like);
 
-        if (counts == null) { await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Этой цитаты больше нет."); return; }
+        if (counts == null) { await _bot.AnswerCallbackQuery(query.Id, "⚠️ Этой цитаты больше нет."); return; }
 
-        await _bot.EditMessageReplyMarkupAsync(
+        await _bot.EditMessageReplyMarkup(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             RatingKeyboard(hash, counts.Value.Likes, counts.Value.Dislikes));
 
-        await _bot.AnswerCallbackQueryAsync(query.Id, "Голос учтён");
+        await _bot.AnswerCallbackQuery(query.Id, "Голос учтён");
     }
 
     private async Task HandleApproveCallback(CallbackQuery query, User user, string data)
@@ -622,7 +621,7 @@ class BotService
         var id = data.Substring("approve_".Length);
         var suggestion = _data.RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: true, _quotes.Exists);
 
-        await _bot.EditMessageTextAsync(
+        await _bot.EditMessageText(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             suggestion != null ? "✅ Цитата одобрена и добавлена." : "⚠️ Это предложение уже обработано.");
@@ -636,7 +635,7 @@ class BotService
         var id = data.Substring("reject_".Length);
         var removed = _data.RemoveSuggestion(list => list.FindIndex(s => s.id == id), approve: false, _quotes.Exists);
 
-        await _bot.EditMessageTextAsync(
+        await _bot.EditMessageText(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             removed != null ? "❌ Цитата отклонена." : "⚠️ Это предложение уже обработано.");
@@ -646,13 +645,13 @@ class BotService
     {
         var rest = data.Substring("delquote_".Length);
 
-        if (rest == "cancel") { await _bot.EditMessageTextAsync(query.Message!.Chat.Id, query.Message.MessageId, "❌ Удаление отменено."); return; }
+        if (rest == "cancel") { await _bot.EditMessageText(query.Message!.Chat.Id, query.Message.MessageId, "❌ Удаление отменено."); return; }
 
         string? removedQuote = int.TryParse(rest, out int deleteIndex)
             ? _data.TryRemoveQuoteAt(deleteIndex)
             : null;
 
-        await _bot.EditMessageTextAsync(
+        await _bot.EditMessageText(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             removedQuote != null ? $"🗑 Удалено: {removedQuote}" : "⚠️ Такой цитаты уже нет.");
@@ -665,7 +664,7 @@ class BotService
         var state = GetState(user.Id);
         var quote = state?.PendingQuote;
 
-        if (state == null || quote == null) { await _bot.AnswerCallbackQueryAsync(query.Id); return; }
+        if (state == null || quote == null) { await _bot.AnswerCallbackQuery(query.Id); return; }
 
         if (query.Data == "regenerate" && state.Mode != UserMode.Edit && CanGenerate(user.Id)) { await HandleRegenerateCallback(query, user, state); return; }
 
@@ -683,7 +682,7 @@ class BotService
 
         if (query.Data == "cancel")
         {
-            await _bot.EditMessageTextAsync(
+            await _bot.EditMessageText(
                 query.Message!.Chat.Id,
                 query.Message.MessageId,
                 "❌ Действие отменено.");
@@ -700,7 +699,7 @@ class BotService
         {
             usedPaid = _data.TryConsumePaidGeneration(user.Id);
 
-            if (!usedPaid) { await OfferPaidGeneration(query.Message!.Chat.Id); await _bot.AnswerCallbackQueryAsync(query.Id); return; }
+            if (!usedPaid) { await OfferPaidGeneration(query.Message!.Chat.Id); await _bot.AnswerCallbackQuery(query.Id); return; }
         }
 
         var regenerated = await GenerateOrNullAsync();
@@ -710,7 +709,7 @@ class BotService
             if (usedPaid)
                 _data.AddPaidGenerations(user.Id, 1);
 
-            await _bot.AnswerCallbackQueryAsync(query.Id, "⚠️ Не удалось перегенерировать цитату.", showAlert: true);
+            await _bot.AnswerCallbackQuery(query.Id, "⚠️ Не удалось перегенерировать цитату.", showAlert: true);
             return;
         }
 
@@ -718,13 +717,13 @@ class BotService
 
         var forAdd = state.Mode == UserMode.Add;
 
-        await _bot.EditMessageTextAsync(
+        await _bot.EditMessageText(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             GeneratedQuoteText(regenerated, forAdd),
             replyMarkup: GeneratedQuoteKeyboard(forAdd));
 
-        await _bot.AnswerCallbackQueryAsync(query.Id);
+        await _bot.AnswerCallbackQuery(query.Id);
     }
 
     private async Task HandleConfirmSuggest(CallbackQuery query, User user, string quote)
@@ -746,7 +745,7 @@ class BotService
                 InlineKeyboardButton.WithCallbackData("❌ Отклонить", $"reject_{suggestion.id}")
             }));
 
-        await TryAsync(() => _bot.DeleteMessageAsync(query.Message!.Chat.Id, query.Message.MessageId),
+        await TryAsync(() => _bot.DeleteMessage(query.Message!.Chat.Id, query.Message.MessageId),
             "Не удалось удалить сообщение с цитатой");
     }
 
@@ -754,7 +753,7 @@ class BotService
     {
         var added = _data.TryAddQuote(quote, _quotes.Exists);
 
-        await _bot.EditMessageTextAsync(
+        await _bot.EditMessageText(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             added ? "🔥 Цитата добавлена." : "⚠️ Такая цитата уже существует.");
@@ -767,7 +766,7 @@ class BotService
     {
         var applied = _data.TryEditQuoteAt(editIndex, quote);
 
-        await _bot.EditMessageTextAsync(
+        await _bot.EditMessageText(
             query.Message!.Chat.Id,
             query.Message.MessageId,
             applied ? $"✏️ Цитата №{editIndex + 1} обновлена." : "⚠️ Цитата больше не существует.");
@@ -780,7 +779,7 @@ class BotService
             if (adminId == excludeId)
                 continue;
 
-            await TryAsync(() => _bot.SendTextMessageAsync(adminId, text, replyMarkup: keyboard),
+            await TryAsync(() => _bot.SendMessage(adminId, text, replyMarkup: keyboard),
                 "Не удалось отправить сообщение админу {AdminId}", adminId);
         }
     }

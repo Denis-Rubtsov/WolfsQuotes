@@ -111,5 +111,6 @@ class InlineHandler
         };
 
     private static Task AnswerAsync(ITelegramBotClient bot, InlineQuery query, string switchPmText, params InlineQueryResult[] results) =>
-        bot.AnswerInlineQueryAsync(query.Id, results, cacheTime: 0, isPersonal: true, null, switchPmText, "start");
+        bot.AnswerInlineQuery(query.Id, results, cacheTime: 0, isPersonal: true,
+            button: new InlineQueryResultsButton { Text = switchPmText, StartParameter = "start" });
 }
