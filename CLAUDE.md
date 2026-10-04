@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Telegram bot (.NET 8, C#) serving "Волчьи цитаты" — a curated quote database with user suggestions, admin moderation, like/dislike voting, inline mode, and AI quote generation via the OpenAI API. All comments, log messages, and user-facing strings are in Russian; keep new ones in Russian too.
+Telegram bot (.NET 10, C#, Telegram.Bot 22) serving "Волчьи цитаты" — a curated quote database with user suggestions, admin moderation, like/dislike voting, inline mode, and AI quote generation via the OpenAI API. All comments, log messages, and user-facing strings are in Russian; keep new ones in Russian too.
 
 ## Commands
 
