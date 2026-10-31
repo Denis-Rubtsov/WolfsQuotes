@@ -10,6 +10,6 @@ RUN dotnet publish Vlk/Vlk.csproj -c Release -o /out --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /out .
-# Настоящий appsettings.json (с токенами) монтируется поверх /app/appsettings.json, состояние лежит в /data
+# Токены приходят из Podman-секретов через переменные окружения, состояние лежит в /data
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Vlk.dll"]
