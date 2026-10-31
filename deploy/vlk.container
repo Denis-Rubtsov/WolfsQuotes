@@ -1,0 +1,33 @@
+# Quadlet-юнит для rootless Podman (Bazzite/Fedora Atomic), без root и rpm-ostree.
+#
+# Первый запуск:
+#   podman build -t localhost/vlk <папка репозитория>
+#   mkdir -p ~/botdata ~/botconfig ~/.config/containers/systemd
+#   cp <старый out/appsettings.json> ~/botconfig/vlk.json && chmod 600 ~/botconfig/vlk.json
+#   cp deploy/vlk.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload && systemctl --user start vlk
+#   sudo loginctl enable-linger $USER   # чтобы бот жил без входа в систему
+#
+# Обновление: podman build -t localhost/vlk <папка> && systemctl --user restart vlk
+# Логи: journalctl --user -u vlk -f
+[Unit]
+Description=Vlk — Telegram-бот с цитатами
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/vlkatest
+ContainerName=vlk
+# Пользователь хоста становится в контейнере пользователем app (1654), так что файлы в ~/botdata остаются твоими
+UserNS=keep-id:uid=1654,gid=1654
+# :z (общая метка SELinux), потому что ~/botdata используют все три бота
+Volume=%h/botdata:/data:z
+Volume=%h/botconfig/vlk.json:/app/appsettings.json:ro,Z
+Environment=TZ=Europe/Moscow
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
