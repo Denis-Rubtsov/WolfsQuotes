@@ -1,7 +1,8 @@
 # Quadlet-юнит для rootless Podman (Bazzite/Fedora Atomic), без root и rpm-ostree.
 # Что юнит ждёт на сервере (это же должен делать деплой из CI):
-#   podman secret vlk-token, vlk-aiapikey   — printf %s "$TOKEN" | podman secret create --replace vlk-token -
-#   ~/.config/vlk/vlk.env                   — ADMIN_IDS=..., BASIC_URL=..., [StarsPrice=...]
+#   podman secret vlk-token, vlk-aiapikey, vlk-s3-access-key, vlk-s3-secret-key
+#                                           — printf %s "$TOKEN" | podman secret create --replace vlk-token -
+#   ~/.config/vlk/vlk.env                   — ADMIN_IDS=..., BASIC_URL=..., S3_BUCKET=..., [StarsPrice=...]
 #   образ ghcr.io/denis-rubtsov/wolfsquotes:latest (Image= можно подменить на :sha-<коммит>)
 #
 # Вручную:
@@ -23,11 +24,15 @@ ContainerName=vlk
 UserNS=keep-id:uid=1654,gid=1654
 # :z (общая метка SELinux), потому что ~/botdata используют все три бота
 Volume=%h/botdata:/data:z
-# Несекретное: ADMIN_IDS, BASIC_URL, StarsPrice и т.п. (QuotesFile/SystemPromptFile/TZ уже заданы в образе)
+# Несекретное: ADMIN_IDS, BASIC_URL, S3_BUCKET, StarsPrice и т.п. (QuotesFile/SystemPromptFile/TZ уже заданы в образе)
 EnvironmentFile=%h/.config/vlk/vlk.env
 # Секреты из podman secret приходят как переменные окружения
 Secret=vlk-token,type=env,target=Token
 Secret=vlk-aiapikey,type=env,target=AiApikey
+Secret=vlk-s3-access-key,type=env,target=S3_ACCESS_KEY
+Secret=vlk-s3-secret-key,type=env,target=S3_SECRET_KEY
+# При остановке бот досылает базу в S3 (до 20 с); по умолчанию podman ждёт только 10
+StopTimeout=30
 
 [Service]
 Restart=always
