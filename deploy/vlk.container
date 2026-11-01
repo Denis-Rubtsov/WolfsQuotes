@@ -27,7 +27,7 @@ Environment=TZ=Europe/Moscow
 Environment=QuotesFile=/data/quotes.json
 Environment=SystemPromptFile=/data/systemprompt.txt
 # Секреты из podman secret приходят как переменные окружения и перекрывают appsettings.json из образа
-Secret=vlk-telegram-token,type=env,target=TelegramBot__Token
+Secret=vlk-telegram-token,type=env,target=Token
 Secret=vlk-ai-apikey,type=env,target=AiApikey
 Secret=vlk-admin-ids,type=env,target=ADMIN_IDS
 Secret=vlk-basic-url,type=env,target=BASIC_URL

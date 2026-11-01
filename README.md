@@ -50,7 +50,7 @@ Vlk/
 
 | Ключ | Описание |
 |---|---|
-| `TelegramBot:Token` | Токен бота от [@BotFather](https://t.me/BotFather) |
+| `Token` | Токен бота от [@BotFather](https://t.me/BotFather) |
 | `ADMIN_IDS` | ID админов через запятую/точку с запятой/пробел, например `123456789,987654321`. Узнать свой ID можно у `@userinfobot` |
 | `AiApikey` | API-ключ OpenAI для генерации цитат |
 | `SystemPromptFile` | Путь к текстовому файлу с системным промптом для генерации (перечитывается на каждый запрос, менять можно без перезапуска; если файла нет — используется встроенный промпт) |
@@ -62,7 +62,7 @@ Vlk/
 
 ```json
 {
-  "TelegramBot": { "Token": "123456:ABC-DEF..." },
+  "Token": "123456:ABC-DEF...",
   "ADMIN_IDS": "123456789,987654321",
   "AiApikey": "sk-...",
   "QuotesFile": "quotes.json",

@@ -5,12 +5,20 @@
 set -euo pipefail
 cfg=${1:?usage: $0 <appsettings.json>}
 
-get() {  # get <ключ через двоеточие>: значение из JSON, ошибка если пусто или заглушка
+get() {  # get <ключ через двоеточие>[|запасной ключ]: значение из JSON, ошибка если пусто или заглушка
   python3 -I -c '
 import json, sys
-v = json.load(open(sys.argv[1]))
-for p in sys.argv[2].split(":"):
-    v = v[p]
+cfg = json.load(open(sys.argv[1]))
+for key in sys.argv[2].split("|"):
+    v = cfg
+    try:
+        for p in key.split(":"):
+            v = v[p]
+        break
+    except (KeyError, TypeError):
+        v = None
+if v is None:
+    sys.exit(sys.argv[2] + ": нет в конфиге")
 v = str(v)
 if not v.strip() or "PLACEHOLDER" in v.upper():
     sys.exit(sys.argv[2] + ": пусто или заглушка")
@@ -22,7 +30,7 @@ while read -r secret key; do
   printf %s "$value" | podman secret create --replace "$secret" - >/dev/null
   echo "ok: $secret"
 done <<'LIST'
-vlk-telegram-token TelegramBot:Token
+vlk-telegram-token Token|TelegramBot:Token
 vlk-ai-apikey AiApikey
 vlk-admin-ids ADMIN_IDS
 vlk-basic-url BASIC_URL

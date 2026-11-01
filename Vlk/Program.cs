@@ -18,7 +18,7 @@ class Program
         });
 
         var quotesFile = config["QuotesFile"];
-        var token = config["TelegramBot:Token"];
+        var token = config["Token"];
         var adminIds = (config["ADMIN_IDS"] ?? "0")
             .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(id => long.Parse(id.Trim()))
