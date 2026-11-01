@@ -15,7 +15,7 @@ cd Vlk && dotnet run        # run the bot (needs config, see below)
 
 There are no tests.
 
-Configuration comes from `Vlk/appsettings.json` overridden by environment variables: `Token`, `ADMIN_IDS` (comma/semicolon/space-separated), `AiApikey`, `QuotesFile`, `BASIC_URL` (voice audio base URL for inline mode), `SystemPromptFile` (optional; re-read on every generation, so prompt edits apply without restart), `StarsPrice` (initial Telegram Stars price of one over-limit generation, default 10, 0 disables selling — overridden at runtime by `/setprice`, persisted in `BotData.stars_price`). The README documents these and every bot command — update it when they change.
+Configuration comes from `Vlk/appsettings.json` overridden by environment variables: `Token`, `ADMIN_IDS` (comma/semicolon/space-separated), `AiApikey`, `QuotesFile`, `BASIC_URL` (voice audio base URL for inline mode), `SystemPromptFile` (optional; re-read on every generation, so prompt edits apply without restart), `StarsPrice` (initial Telegram Stars price of one over-limit generation, default 10, 0 disables selling — overridden at runtime by `/setprice`, persisted in `BotData.stars_price`). The Docker image (`Dockerfile`) presets `QuotesFile`/`SystemPromptFile`/`TZ` under the `/data` volume; `deploy/vlk.container` (rootless Podman quadlet) supplies `Token`/`AiApikey` from podman secrets `vlk-token`/`vlk-aiapikey` and the rest from `~/.config/vlk/vlk.env`. The README documents these and every bot command — update it when they change.
 
 ## Architecture
 

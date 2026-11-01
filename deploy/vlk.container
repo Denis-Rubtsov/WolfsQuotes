@@ -1,15 +1,15 @@
 # Quadlet-юнит для rootless Podman (Bazzite/Fedora Atomic), без root и rpm-ostree.
+# Что юнит ждёт на сервере (это же должен делать деплой из CI):
+#   podman secret vlk-token, vlk-aiapikey   — printf %s "$TOKEN" | podman secret create --replace vlk-token -
+#   ~/.config/vlk/vlk.env                   — ADMIN_IDS=..., BASIC_URL=..., [StarsPrice=...]
+#   образ ghcr.io/denis-rubtsov/wolfsquotes:latest (Image= можно подменить на :sha-<коммит>)
 #
-# Первый запуск:
-#   podman build -t localhost/vlk <папка репозитория>
-#   bash deploy/import-secrets.sh <старый out/appsettings.json>   # создаёт Podman-секреты из конфига
+# Вручную:
+#   bash deploy/import-secrets.sh <старый out/appsettings.json>   # секреты + vlk.env из старого конфига
 #   mkdir -p ~/botdata ~/.config/containers/systemd
 #   cp deploy/vlk.container ~/.config/containers/systemd/
-#   systemctl --user daemon-reload && systemctl --user start vlk
+#   systemctl --user daemon-reload && systemctl --user restart vlk
 #   sudo loginctl enable-linger $USER   # чтобы бот жил без входа в систему
-#
-# Обновление: podman build -t localhost/vlk <папка> && systemctl --user restart vlk
-# Сменить токен: снова import-secrets.sh (или printf %s 'новый' | podman secret create --replace <имя> -), затем restart
 # Логи: journalctl --user -u vlk -f
 [Unit]
 Description=Vlk — Telegram-бот с цитатами
@@ -17,20 +17,17 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=localhost/vlk:latest
+Image=ghcr.io/denis-rubtsov/wolfsquotes:latest
 ContainerName=vlk
 # Пользователь хоста становится в контейнере пользователем app (1654), так что файлы в ~/botdata остаются твоими
 UserNS=keep-id:uid=1654,gid=1654
 # :z (общая метка SELinux), потому что ~/botdata используют все три бота
 Volume=%h/botdata:/data:z
-Environment=TZ=Europe/Moscow
-Environment=QuotesFile=/data/quotes.json
-Environment=SystemPromptFile=/data/systemprompt.txt
-# Секреты из podman secret приходят как переменные окружения и перекрывают appsettings.json из образа
-Secret=vlk-telegram-token,type=env,target=Token
-Secret=vlk-ai-apikey,type=env,target=AiApikey
-Secret=vlk-admin-ids,type=env,target=ADMIN_IDS
-Secret=vlk-basic-url,type=env,target=BASIC_URL
+# Несекретное: ADMIN_IDS, BASIC_URL, StarsPrice и т.п. (QuotesFile/SystemPromptFile/TZ уже заданы в образе)
+EnvironmentFile=%h/.config/vlk/vlk.env
+# Секреты из podman secret приходят как переменные окружения
+Secret=vlk-token,type=env,target=Token
+Secret=vlk-aiapikey,type=env,target=AiApikey
 
 [Service]
 Restart=always

@@ -80,6 +80,25 @@ dotnet restore
 dotnet run
 ```
 
+## Docker / Podman
+
+`Dockerfile` собирает самодостаточный образ (`ghcr.io/denis-rubtsov/wolfsquotes`); база данных и промпт лежат в томе `/data`. В образе уже заданы `QuotesFile=/data/quotes.json`, `SystemPromptFile=/data/systemprompt.txt` и `TZ=Europe/Moscow`, так что снаружи нужно передать только:
+
+| Переменная | Секрет? |
+|---|---|
+| `Token` | да |
+| `AiApikey` | да |
+| `ADMIN_IDS` | нет |
+| `BASIC_URL` | нет |
+| `StarsPrice` | нет, необязательно |
+
+```bash
+docker build -t ghcr.io/denis-rubtsov/wolfsquotes .
+docker run -d -v ./data:/data -e Token=... -e AiApikey=... -e ADMIN_IDS=... -e BASIC_URL=... ghcr.io/denis-rubtsov/wolfsquotes
+```
+
+Для домашнего сервера (rootless Podman) есть quadlet-юнит `deploy/vlk.container`: секреты он берёт из `podman secret` (`vlk-token`, `vlk-aiapikey`), остальное из `~/.config/vlk/vlk.env`. Как подготовить сервер, написано в комментарии в начале юнита; `deploy/import-secrets.sh` делает это из старого `appsettings.json`.
+
 ## Лицензия
 
 [GNU AGPLv3](LICENSE).
