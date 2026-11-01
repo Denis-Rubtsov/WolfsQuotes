@@ -1,0 +1,65 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# Два деплоя одновременно не запускаются: новый ждёт, пока закончится текущий
+concurrency:
+  group: deploy-vlk
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [ self-hosted, home ]
+    environment: Typical
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Сборка образа
+        run: podman build -t ghcr.io/denis-rubtsov/wolfsquotes:latest .
+
+      - name: Секреты и настройки
+        env:
+          TOKEN: ${{ secrets.TOKEN }}
+          AIAPIKEY: ${{ secrets.AIAPIKEY }}
+          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+          BASIC_URL: ${{ secrets.BASIC_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        run: |
+          set -euo pipefail
+          for v in TOKEN AIAPIKEY S3_ACCESS_KEY S3_SECRET_KEY ADMIN_IDS BASIC_URL S3_BUCKET; do
+            [ -n "${!v}" ] || { echo "::error::$v не задан в environment Typical"; exit 1; }
+          done
+
+          printf %s "$TOKEN"         | podman secret create --replace vlk-token - >/dev/null
+          printf %s "$AIAPIKEY"      | podman secret create --replace vlk-aiapikey - >/dev/null
+          printf %s "$S3_ACCESS_KEY" | podman secret create --replace vlk-s3-access-key - >/dev/null
+          printf %s "$S3_SECRET_KEY" | podman secret create --replace vlk-s3-secret-key - >/dev/null
+
+          mkdir -p ~/.config/vlk ~/botdata
+          umask 077
+          printf 'ADMIN_IDS=%s\nBASIC_URL=%s\nS3_BUCKET=%s\n' "$ADMIN_IDS" "$BASIC_URL" "$S3_BUCKET" > ~/.config/vlk/vlk.env
+
+      - name: Юнит и перезапуск
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.config/containers/systemd
+          cp deploy/vlk.container ~/.config/containers/systemd/
+          systemctl --user daemon-reload
+          systemctl --user restart vlk
+          sleep 15
+          if ! systemctl --user is-active --quiet vlk; then
+            journalctl --user -u vlk -n 50 --no-pager
+            exit 1
+          fi
+          journalctl --user -u vlk -n 15 --no-pager
+
+      - name: Очистка старых образов
+        if: always()
+        run: podman image prune -f
