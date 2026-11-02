@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: [ self-hosted, home ]
+    runs-on: self-hosted
     environment: Typical
     permissions:
       contents: read
