@@ -8,4 +8,6 @@ class BotData
     public Dictionary<long, int> paid_generations { get; set; } = new();
     // Цена одной такой генерации в звёздах; null — используется значение из конфига (StarsPrice).
     public int? stars_price { get; set; }
+    // Время последнего Save(): по нему при старте выбирается более свежая копия — локальная или из S3.
+    public DateTimeOffset? updated_at { get; set; }
 }

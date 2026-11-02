@@ -14,7 +14,8 @@ LABEL org.opencontainers.image.source=https://github.com/Denis-Rubtsov/WolfsQuot
 WORKDIR /app
 COPY --from=build /out .
 # Несекретные значения по умолчанию; всё можно перекрыть переменными окружения.
-# Снаружи нужны: Token, AiApikey, ADMIN_IDS, BASIC_URL (необязательно StarsPrice) — см. deploy/.
+# Снаружи нужны: Token, AiApikey, ADMIN_IDS, BASIC_URL, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY — см. deploy/.
+# /data с S3 — только локальный кеш базы; без S3_BUCKET — единственная копия.
 ENV TZ=Europe/Moscow \
     QuotesFile=/data/quotes.json \
     SystemPromptFile=/data/systemprompt.txt

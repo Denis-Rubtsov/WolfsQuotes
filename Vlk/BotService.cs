@@ -41,7 +41,7 @@ class BotService
     // Текущая цена генерации в звёздах: значение из /setprice, если оно задано, иначе конфиг StarsPrice.
     private int StarsPrice => _data.StarsPrice(_defaultStarsPrice);
 
-    public void Start()
+    public void Start(CancellationToken ct = default)
     {
         TrySync(() => SetDefaultCommandsAsync().GetAwaiter().GetResult(),
             "Не удалось установить меню команд по умолчанию");
@@ -70,7 +70,7 @@ class BotService
             TrySync(() => _bot.SetMyCommands(adminCommands, scope: new BotCommandScopeChat { ChatId = adminId }).GetAwaiter().GetResult(),
                 "Не удалось установить меню команд для админа {AdminId}", adminId);
 
-        _bot.StartReceiving(Update, Error);
+        _bot.StartReceiving(Update, Error, cancellationToken: ct);
     }
 
     private static BotCommand Cmd(string command, string description) =>
