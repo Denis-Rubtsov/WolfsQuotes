@@ -52,7 +52,7 @@ jobs:
           mkdir -p ~/.config/containers/systemd
           cp deploy/vlk.container ~/.config/containers/systemd/
           systemctl --user daemon-reload
-          systemctl --user restart vlk
+          sudo systemctl restart vlk
           sleep 15
           if ! systemctl --user is-active --quiet vlk; then
             journalctl --user -u vlk -n 50 --no-pager
