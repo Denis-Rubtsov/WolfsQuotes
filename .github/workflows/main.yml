@@ -49,10 +49,19 @@ jobs:
       - name: Юнит и перезапуск
         run: |
           set -euo pipefail
+          # Runner должен работать от того же пользователя, которому принадлежат
+          # rootless Podman secrets и Quadlet-конфигурация.
+          export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+          export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+          if [ ! -S "$XDG_RUNTIME_DIR/bus" ]; then
+            echo "::error::Не найден user systemd bus ($XDG_RUNTIME_DIR/bus). Включите lingering для пользователя runner и убедитесь, что его user manager запущен."
+            exit 1
+          fi
+
           mkdir -p ~/.config/containers/systemd
           cp deploy/vlk.container ~/.config/containers/systemd/
           systemctl --user daemon-reload
-          sudo systemctl restart vlk
+          systemctl --user restart vlk
           sleep 15
           if ! systemctl --user is-active --quiet vlk; then
             journalctl --user -u vlk -n 50 --no-pager
