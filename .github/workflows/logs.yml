@@ -1,0 +1,22 @@
+name: Logs
+
+# Ручной просмотр логов бота на сервере: Actions → Logs → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      lines:
+        description: Сколько последних строк показать
+        default: "200"
+
+jobs:
+  logs:
+    runs-on: self-hosted
+    permissions: {}
+    steps:
+      - name: journalctl
+        env:
+          LINES_COUNT: ${{ inputs.lines }}
+        run: |
+          export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+          systemctl --user status vlk --no-pager || true
+          journalctl --user -u vlk -n "$LINES_COUNT" --no-pager
