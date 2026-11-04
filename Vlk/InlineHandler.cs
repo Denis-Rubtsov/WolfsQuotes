@@ -50,12 +50,27 @@ class InlineHandler
                 index = _random.Next(quotes.Count);
             }
 
-            await AnswerAsync(bot, query, $"Введите целое число от 1 до {quotes.Count}",
-                Article(title, quotes[index]),
-                new InlineQueryResultVoice(
-                    Guid.NewGuid().ToString(),
-                    _voiceUrl + $"{index}.ogg",
-                    title + " голосом Волка"));
+            var hint = $"Введите целое число от 1 до {quotes.Count}";
+            var article = Article(title, quotes[index]);
+
+            if (string.IsNullOrEmpty(_voiceUrl)) { await AnswerAsync(bot, query, hint, article); return; }
+
+            try
+            {
+                await AnswerAsync(bot, query, hint, article,
+                    new InlineQueryResultVoice(
+                        Guid.NewGuid().ToString(),
+                        _voiceUrl + $"{index}.ogg",
+                        title + " голосом Волка"));
+            }
+            catch (Telegram.Bot.Exceptions.ApiRequestException ex)
+                when (!ex.Message.Contains("query is too old"))
+            {
+                // Telegram отклоняет весь ответ, если не может получить озвучку (например, бакет не публичный) —
+                // тогда отдаём хотя бы текст
+                _logger.LogWarning("Telegram не принял озвучку {Url} ({Error}), отправляю только текст", _voiceUrl + $"{index}.ogg", ex.Message);
+                await AnswerAsync(bot, query, hint, article);
+            }
         }
         catch (Telegram.Bot.Exceptions.ApiRequestException ex)
             when (ex.Message.Contains("query is too old"))
