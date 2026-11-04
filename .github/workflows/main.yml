@@ -32,9 +32,11 @@ jobs:
           BASIC_URL: ${{ secrets.BASIC_URL }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           S3_URL: ${{ secrets.S3_URL }}
+          # Selectel проверяет регион в подписи; для s3.ru-3.storage.selcloud.ru это ru-3
+          S3_REGION: ${{ secrets.S3_REGION || 'ru-3' }}
         run: |
           set -euo pipefail
-          for v in TOKEN AIAPIKEY S3_ACCESS_KEY S3_SECRET_KEY ADMIN_IDS BASIC_URL S3_BUCKET; do
+          for v in TOKEN AIAPIKEY S3_ACCESS_KEY S3_SECRET_KEY ADMIN_IDS BASIC_URL S3_BUCKET S3_URL; do
             [ -n "${!v}" ] || { echo "::error::$v не задан в environment Typical"; exit 1; }
           done
 
@@ -45,7 +47,8 @@ jobs:
 
           mkdir -p ~/.config/vlk ~/botdata
           umask 077
-          printf 'ADMIN_IDS=%s\nBASIC_URL=%s\nS3_BUCKET=%s\n' "$ADMIN_IDS" "$BASIC_URL" "$S3_BUCKET" > ~/.config/vlk/vlk.env
+          printf 'ADMIN_IDS=%s\nBASIC_URL=%s\nS3_BUCKET=%s\nS3_URL=%s\nS3_REGION=%s\n' \
+            "$ADMIN_IDS" "$BASIC_URL" "$S3_BUCKET" "$S3_URL" "$S3_REGION" > ~/.config/vlk/vlk.env
 
       - name: Юнит и перезапуск
         run: |
