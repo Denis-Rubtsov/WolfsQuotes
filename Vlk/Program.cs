@@ -24,7 +24,8 @@ class Program
             .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(id => long.Parse(id.Trim()))
             .ToList();
-        var voice = config["BASIC_URL"] ?? "";
+        // Ссылка на папку с озвучкой: к ней дописывается "<номер>.ogg", поэтому нужен завершающий "/"
+        var voice = S3Storage.WithScheme(config["BASIC_URL"]) is { } voiceUrl ? voiceUrl.TrimEnd('/') + "/" : "";
         var aiApiKey = config["AiApikey"];
         var promptFile = config["SystemPromptFile"];
 
@@ -34,7 +35,7 @@ class Program
         S3Storage? s3 = null;
         if (!string.IsNullOrWhiteSpace(config["S3_BUCKET"]))
         {
-            var serviceUrl = config["S3_URL"] ?? S3Storage.ServiceUrlFrom(voice)
+            var serviceUrl = S3Storage.WithScheme(config["S3_URL"]) ?? S3Storage.ServiceUrlFrom(voice)
                 ?? throw new InvalidOperationException("Не удалось взять адрес S3 из BASIC_URL — задай S3_URL");
             s3 = new S3Storage(serviceUrl, config["S3_BUCKET"]!, config["S3_REGION"] ?? "us-east-1",
                 config["S3_ACCESS_KEY"] ?? throw new InvalidOperationException("Не задан S3_ACCESS_KEY"),

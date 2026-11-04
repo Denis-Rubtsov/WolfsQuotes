@@ -28,6 +28,14 @@ class S3Storage
         });
     }
 
+    // "s3.ru-3.storage.selcloud.ru" → "https://s3.ru-3.storage.selcloud.ru"; пустое значение → null
+    public static string? WithScheme(string? url)
+    {
+        url = url?.Trim();
+        if (string.IsNullOrEmpty(url)) return null;
+        return url.Contains("://") ? url : "https://" + url;
+    }
+
     // Адрес сервера из публичной ссылки на файл в бакете того же хранилища (BASIC_URL):
     // https://<бакет>.s3.ru1.storage.beget.cloud/... и https://s3.ru1.storage.beget.cloud/<бакет>/... → https://s3.ru1.storage.beget.cloud
     public static string? ServiceUrlFrom(string? publicUrl)
