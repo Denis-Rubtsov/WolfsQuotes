@@ -13,7 +13,12 @@ dotnet build                # from repo root (builds Vlk.sln)
 cd Vlk && dotnet run        # run the bot (needs config, see below)
 ```
 
-There are no tests.
+```bash
+dotnet test                                              # from repo root; S3 tests are skipped
+VLK_TEST_S3_URL=http://127.0.0.1:5000 dotnet test        # with `moto_server -p 5000` running: S3 tests too
+```
+
+Tests live in `Vlk.Tests/` (xUnit v3 on Microsoft.Testing.Platform — `global.json` opts `dotnet test` into it, so VSTest-style flags don't apply). Production classes are `internal`; `Vlk.csproj` has `InternalsVisibleTo Vlk.Tests`, and a few private helpers (`BotService.ParseCommand`/`TryParseIndex`, `AiQuoteService.GetSystemPromptAsync`) are `internal` for testing. Unit tests use a temp-dir `QuotesFile` with no S3; `Vlk.Tests/S3/` are integration tests against a moto S3 emulator, each in a fresh bucket, skipped unless `VLK_TEST_S3_URL` is set (`VLK_TEST_S3_REQUIRED=1` turns the skip into a failure — CI sets it). `BotService`/`InlineHandler` Telegram handlers and the actual OpenAI call are not covered. CI is `.github/workflows/ci.yml`: build, all tests with a `motoserver/moto` service container, and a `docker build` check.
 
 Configuration comes from `Vlk/appsettings.json` overridden by environment variables: `Token`, `ADMIN_IDS` (comma/semicolon/space-separated), `AiApikey`, `QuotesFile`, `BASIC_URL` (voice audio base URL for inline mode), `SystemPromptFile` (optional; re-read on every generation, so prompt edits apply without restart), `StarsPrice` (initial Telegram Stars price of one over-limit generation, default 10, 0 disables selling — overridden at runtime by `/setprice`, persisted in `BotData.stars_price`). Optional S3 storage: with `S3_BUCKET` set (+ `S3_ACCESS_KEY`/`S3_SECRET_KEY`; endpoint derived from `BASIC_URL` unless `S3_URL`), the database and system prompt live in a private bucket; see "S3 sync" below. The Docker image (`Dockerfile`) presets `QuotesFile`/`SystemPromptFile`/`TZ` under the `/data` volume; `deploy/vlk.container` (rootless Podman quadlet) supplies `Token`/`AiApikey`/`S3_ACCESS_KEY`/`S3_SECRET_KEY` from podman secrets `vlk-token`/`vlk-aiapikey`/`vlk-s3-access-key`/`vlk-s3-secret-key` and the rest from `~/.config/vlk/vlk.env`. The README documents these and every bot command — update it when they change.
 

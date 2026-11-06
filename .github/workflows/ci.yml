@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+# Новый пуш в ту же ветку/PR отменяет устаревший прогон
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  test:
+    name: Сборка и тесты
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # S3-эмулятор для интеграционных тестов синхронизации базы и промпта
+    services:
+      s3:
+        image: motoserver/moto:5.1.22
+        ports:
+          - 5000:5000
+
+    env:
+      VLK_TEST_S3_URL: http://127.0.0.1:5000
+      # Без эмулятора S3-тесты не пропускаются, а падают
+      VLK_TEST_S3_REQUIRED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Кеш NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Восстановление пакетов
+        run: dotnet restore Vlk.sln
+
+      - name: Сборка
+        run: dotnet build Vlk.sln -c Release --no-restore
+
+      - name: Ожидание S3-эмулятора
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf "$VLK_TEST_S3_URL/moto-api/" >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::S3-эмулятор не поднялся за 30 секунд"
+          exit 1
+
+      - name: Тесты
+        run: >
+          dotnet test --solution Vlk.sln -c Release --no-build
+          --report-xunit-trx --results-directory TestResults
+
+      - name: Отчёт о тестах
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: ignore
+
+  docker:
+    name: Сборка образа
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Тот же Dockerfile, что собирается при деплое; здесь только проверка, без публикации
+      - name: docker build
+        run: docker build -t wolfsquotes:ci .
