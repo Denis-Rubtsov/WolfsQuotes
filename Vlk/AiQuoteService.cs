@@ -3,7 +3,7 @@ using OpenAI.Chat;
 
 class AiQuoteService
 {
-    private const string DefaultSystemPrompt =
+    internal const string DefaultSystemPrompt =
         "Ты помогаешь придумывать короткие абсурдные афористичные цитаты для телеграм-бота \"Вълчьи цитаты\" " +
         "от лица мудрого и харизматичного Волка. Пиши на русском языке. Одна цитата, 1-2 предложения, " +
         "без кавычек и подписи, в философско-ироничном тоне. Вместо \"волк\" пиши \"вълкъ\". В ответе — только сама цитата.";
@@ -33,7 +33,7 @@ class AiQuoteService
     {
         var examples = _data.Read(d => d.quotes.OrderBy(_ => _random.Next()).Take(10).ToList());
 
-        var systemPrompt = _s3 != null ? await LoadSystemPromptFromS3Async() : LoadSystemPrompt();
+        var systemPrompt = await GetSystemPromptAsync();
 
         var userPrompt = examples.Count > 0
             ? "Вот примеры цитат в нужном стиле:\n" + string.Join("\n", examples.Select(q => $"- {q}")) +
@@ -55,6 +55,10 @@ class AiQuoteService
 
         return completion.Content[0].Text.Trim().Trim('"');
     }
+
+    // internal — чтобы выбор промпта проверялся в тестах без обращения к OpenAI
+    internal Task<string> GetSystemPromptAsync() =>
+        _s3 != null ? LoadSystemPromptFromS3Async() : Task.FromResult(LoadSystemPrompt());
 
     // Промпт из S3 проверяется на каждую генерацию, но по ETag: если не менялся, тело не скачивается.
     // Если S3 недоступен — последний полученный промпт, если его не было — встроенный.

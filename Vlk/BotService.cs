@@ -176,7 +176,7 @@ class BotService
         }
     }
 
-    private static (string Command, string Args) ParseCommand(string text)
+    internal static (string Command, string Args) ParseCommand(string text)
     {
         var parts = text.Split(' ', 2, StringSplitOptions.TrimEntries);
         var command = parts[0];
@@ -188,7 +188,7 @@ class BotService
         return (command.ToLowerInvariant(), parts.Length > 1 ? parts[1] : "");
     }
 
-    private static bool TryParseIndex(string args, out int index)
+    internal static bool TryParseIndex(string args, out int index)
     {
         index = 0;
         var token = args.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
