@@ -71,6 +71,7 @@ class Program
         service.Start(stopping.Token);
 
         log.LogInformation("Бот запущен");
+        await CheckVoiceAsync(voice, log);
         try { await Task.Delay(Timeout.Infinite, stopping.Token); }
         catch (OperationCanceledException) { }
 
@@ -78,5 +79,28 @@ class Program
         await Task.Delay(TimeSpan.FromSeconds(1)); // дать доработать уже начатым обработчикам
         await data.FlushAsync(TimeSpan.FromSeconds(20));
         log.LogInformation("Бот остановлен");
+    }
+
+    // Telegram скачивает озвучку сам и без ключей, поэтому проверяем, что файл отдаётся анонимно
+    private static async Task CheckVoiceAsync(string voiceUrl, ILogger log)
+    {
+        if (string.IsNullOrEmpty(voiceUrl)) { log.LogWarning("BASIC_URL не задан — озвучки не будет"); return; }
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var request = new HttpRequestMessage(HttpMethod.Get, voiceUrl + "0.ogg");
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            var type = response.Content.Headers.ContentType?.MediaType ?? "нет";
+            if (response.IsSuccessStatusCode)
+                log.LogInformation("Озвучка доступна: 0.ogg → {Status}, Content-Type {Type}", (int)response.StatusCode, type);
+            else
+                log.LogWarning("Озвучка недоступна: 0.ogg → {Status} {Reason}, Content-Type {Type}, путь {Path}",
+                    (int)response.StatusCode, response.ReasonPhrase, type, request.RequestUri!.AbsolutePath);
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning("Озвучка недоступна: {Error}", ex.Message);
+        }
     }
 }
