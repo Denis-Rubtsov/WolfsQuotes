@@ -8,17 +8,17 @@ class InlineHandler
     private readonly DataService _data;
     private readonly AiQuoteService _ai;
     private readonly HashSet<long> _adminIds;
-    private readonly string _voiceUrl;
+    private readonly VoiceCache _voice;
     private readonly RateLimiter _rateLimiter;
     private readonly ILogger<InlineHandler> _logger;
     private readonly Random _random = new();
 
-    public InlineHandler(DataService data, AiQuoteService ai, IEnumerable<long> adminIds, string voiceUrl, RateLimiter rateLimiter, ILogger<InlineHandler> logger)
+    public InlineHandler(DataService data, AiQuoteService ai, IEnumerable<long> adminIds, VoiceCache voice, RateLimiter rateLimiter, ILogger<InlineHandler> logger)
     {
         _data = data;
         _ai = ai;
         _adminIds = new HashSet<long>(adminIds);
-        _voiceUrl = voiceUrl;
+        _voice = voice;
         _rateLimiter = rateLimiter;
         _logger = logger;
     }
@@ -53,22 +53,24 @@ class InlineHandler
             var hint = $"Введите целое число от 1 до {quotes.Count}";
             var article = Article(title, quotes[index]);
 
-            if (string.IsNullOrEmpty(_voiceUrl)) { await AnswerAsync(bot, query, hint, article); return; }
+            if (!_voice.Enabled) { await AnswerAsync(bot, query, hint, article); return; }
+
+            // По file_id, если удалось загрузить файл в Telegram, иначе — по ссылке, как раньше
+            var voiceTitle = title + " голосом Волка";
+            var fileId = await _voice.GetFileIdAsync(bot, index);
+            InlineQueryResult voice = fileId != null
+                ? new InlineQueryResultCachedVoice(Guid.NewGuid().ToString(), fileId, voiceTitle)
+                : new InlineQueryResultVoice(Guid.NewGuid().ToString(), _voice.UrlOf(index), voiceTitle);
 
             try
             {
-                await AnswerAsync(bot, query, hint, article,
-                    new InlineQueryResultVoice(
-                        Guid.NewGuid().ToString(),
-                        _voiceUrl + $"{index}.ogg",
-                        title + " голосом Волка"));
+                await AnswerAsync(bot, query, hint, article, voice);
             }
             catch (Telegram.Bot.Exceptions.ApiRequestException ex)
                 when (!ex.Message.Contains("query is too old"))
             {
-                // Telegram отклоняет весь ответ, если не может получить озвучку (например, бакет не публичный) —
-                // тогда отдаём хотя бы текст
-                _logger.LogWarning("Telegram не принял озвучку {Url} ({Error}), отправляю только текст", _voiceUrl + $"{index}.ogg", ex.Message);
+                // Telegram отклоняет весь ответ, если не принял озвучку, — тогда отдаём хотя бы текст
+                _logger.LogWarning("Telegram не принял озвучку {Index}.ogg ({Error}), отправляю только текст", index, ex.Message);
                 await AnswerAsync(bot, query, hint, article);
             }
         }

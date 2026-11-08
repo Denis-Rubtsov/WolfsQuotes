@@ -59,7 +59,8 @@ class Program
         // Цена одной генерации сверх лимита в звёздах Telegram; 0 отключает продажу.
         var starsPrice = int.TryParse(config["StarsPrice"], out var price) ? price : 10;
 
-        var inline = new InlineHandler(data, ai, adminIds, voice, rateLimiter, loggerFactory.CreateLogger<InlineHandler>());
+        var inline = new InlineHandler(data, ai, adminIds,
+            new VoiceCache(voice, adminIds.FirstOrDefault(), loggerFactory.CreateLogger<VoiceCache>()), rateLimiter, loggerFactory.CreateLogger<InlineHandler>());
 
         var service = new BotService(bot, inline, data, quotes, ai, adminIds, rateLimiter, starsPrice, loggerFactory.CreateLogger<BotService>());
 
